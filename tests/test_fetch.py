@@ -104,7 +104,7 @@ def test_an_address_on_this_machine_or_network_is_refused(url):
 
 @pytest.mark.parametrize(
     "url",
-    ["http://huggingface.co/datasets/a/b", "file:///etc/passwd", "ftp://example.com/x"],
+    ["http://github.com/a/b", "file:///etc/passwd", "ftp://example.com/x"],
     ids=["plain-http", "file", "ftp"],
 )
 def test_only_https_is_fetched(url):
@@ -125,7 +125,6 @@ def test_an_empty_url_is_refused():
 @pytest.mark.parametrize(
     ("url", "service"),
     [
-        ("https://huggingface.co/datasets/a/b", "hf"),
         ("https://github.com/a/b", "github"),
         ("https://example.com/logs/a.jsonl", "direct"),
     ],
@@ -135,7 +134,7 @@ def test_a_public_host_is_classified_by_what_is_understood(url, service):
 
 
 def test_a_bare_url_is_taken_as_one_file():
-    """Only two hosts can be listed; everywhere else is a direct link."""
+    """Only GitHub can be listed; everywhere else is a direct link."""
     _, label, files, _ = fetch.plan("https://example.com/runs/session.jsonl", {})
     assert label == "example.com"
     assert [f.name for f in files] == ["session.jsonl"]
@@ -176,14 +175,14 @@ def test_a_token_travels_in_a_header_never_in_the_url(monkeypatch):
         return _Response(b"{}", request.full_url)
 
     monkeypatch.setattr(fetch.urllib.request, "urlopen", capture)
-    fetch._open("https://huggingface.co/api/datasets/a/b", "secret-token", "hf")
+    fetch._open("https://api.github.com/repos/a/b", "secret-token", "github")
     assert captured["auth"] == "Bearer secret-token"
     assert "secret-token" not in captured["url"]
 
 
 @pytest.mark.parametrize(
     ("code", "expected"),
-    [(401, "needs a token"), (403, "needs a token"), (404, "Nothing there"),
+    [(401, "Add a token"), (403, "Add a token"), (404, "Nothing there"),
      (500, "said 500")],
 )
 def test_an_http_failure_says_what_to_do_about_it(monkeypatch, code, expected):
@@ -192,66 +191,7 @@ def test_an_http_failure_says_what_to_do_about_it(monkeypatch, code, expected):
 
     monkeypatch.setattr(fetch.urllib.request, "urlopen", refuse)
     with pytest.raises(fetch.FetchError, match=expected):
-        fetch._open("https://huggingface.co/x", None, "hf")
-
-
-# ---- hugging face ----------------------------------------------------------------
-
-
-def test_a_dataset_url_lists_its_convertible_files(monkeypatch):
-    seen = _stub(
-        monkeypatch,
-        {
-            "api/datasets": [
-                {"type": "file", "path": "a/transcript.jsonl", "size": 10},
-                {"type": "file", "path": "a/description.md", "size": 5},
-                {"type": "directory", "path": "a"},
-                {"type": "file", "path": "b/metadata.json", "size": 7},
-            ]
-        },
-    )
-    service, label, files, _ = fetch.plan(
-        "https://huggingface.co/datasets/owner/name", {"hf": "tok"}
-    )
-    assert service == "hf"
-    assert label == "owner--name"
-    assert [f.name for f in files] == [
-        "a/transcript.jsonl",
-        "a/description.md",
-        "b/metadata.json",
-    ]
-    assert all("/resolve/main/" in f.url for f in files)
-    assert seen["auth"] == ["tok"], "the token was not sent"
-
-
-def test_a_tree_url_with_a_revision_and_subdirectory(monkeypatch):
-    seen = _stub(monkeypatch, {"api/datasets": [{"type": "file", "path": "x.jsonl"}]})
-    fetch.plan(
-        "https://huggingface.co/datasets/owner/name/tree/v2/attacks/one", {"hf": None}
-    )
-    assert "/tree/v2/attacks/one" in seen["urls"][0]
-
-
-def test_a_single_file_url_needs_no_listing(monkeypatch):
-    seen = _stub(monkeypatch, {})
-    _, _, files, _ = fetch.plan(
-        "https://huggingface.co/datasets/owner/name/blob/main/a/transcript.jsonl", {}
-    )
-    assert [f.name for f in files] == ["transcript.jsonl"]
-    assert files[0].url.endswith("/resolve/main/a/transcript.jsonl")
-    assert seen["urls"] == [], "a single file should not need the tree API"
-
-
-def test_a_model_repo_works_as_well_as_a_dataset(monkeypatch):
-    seen = _stub(monkeypatch, {"api/models": [{"type": "file", "path": "t.jsonl"}]})
-    _, label, files, _ = fetch.plan("https://huggingface.co/owner/name", {})
-    assert label == "owner--name"
-    assert "api/models/owner/name" in seen["urls"][0]
-
-
-def test_a_url_that_is_not_a_repo_is_refused():
-    with pytest.raises(fetch.FetchError, match="does not look like"):
-        fetch.plan("https://huggingface.co/", {})
+        fetch._open("https://github.com/x", None, "github")
 
 
 # ---- github ----------------------------------------------------------------------
@@ -316,18 +256,18 @@ def test_a_blob_url_is_rewritten_to_raw(monkeypatch):
 def test_nothing_convertible_is_said_plainly(monkeypatch):
     # Markdown is fetchable — some corpora publish transcripts as nothing else —
     # so the refusal is tested with something that could not be one.
-    _stub(monkeypatch, {"api/datasets": [{"type": "file", "path": "diagram.png"}]})
+    _stub(monkeypatch, {"git/trees": {"tree": [{"type": "blob", "path": "diagram.png"}]}})
     with pytest.raises(fetch.FetchError, match="Nothing convertible"):
-        fetch.plan("https://huggingface.co/datasets/owner/name", {})
+        fetch.plan("https://github.com/owner/name/tree/main", {})
 
 
 def test_a_transcript_published_as_markdown_is_worth_fetching(monkeypatch):
     """A bucket of 136 of these was unreachable while .md was filtered out."""
     _stub(
         monkeypatch,
-        {"api/datasets": [{"type": "file", "path": "run/transcript_attack.md"}]},
+        {"git/trees": {"tree": [{"type": "blob", "path": "run/transcript_attack.md"}]}},
     )
-    plan = fetch.plan("https://huggingface.co/datasets/owner/name", {})
+    plan = fetch.plan("https://github.com/owner/name/tree/main", {})
     assert [f.name for f in plan.files] == ["run/transcript_attack.md"]
 
 
@@ -335,27 +275,27 @@ def test_too_many_files_is_refused_before_downloading(monkeypatch):
     _stub(
         monkeypatch,
         {
-            "api/datasets": [
-                {"type": "file", "path": f"{i}.jsonl"}
+            "git/trees": {"tree": [
+                {"type": "blob", "path": f"{i}.jsonl"}
                 for i in range(fetch.MAX_FILES + 1)
-            ]
+            ]}
         },
     )
     with pytest.raises(fetch.FetchError, match="more than this fetches"):
-        fetch.plan("https://huggingface.co/datasets/owner/name", {})
+        fetch.plan("https://github.com/owner/name/tree/main", {})
 
 
 def test_too_many_bytes_is_refused_before_downloading(monkeypatch):
     _stub(
         monkeypatch,
         {
-            "api/datasets": [
-                {"type": "file", "path": "big.jsonl", "size": fetch.MAX_TOTAL_BYTES + 1}
-            ]
+            "git/trees": {"tree": [
+                {"type": "blob", "path": "big.jsonl", "size": fetch.MAX_TOTAL_BYTES + 1}
+            ]}
         },
     )
     with pytest.raises(fetch.FetchError, match="over the"):
-        fetch.plan("https://huggingface.co/datasets/owner/name", {})
+        fetch.plan("https://github.com/owner/name/tree/main", {})
 
 
 # ---- downloading -----------------------------------------------------------------
@@ -365,8 +305,8 @@ def test_files_land_under_the_directory_given(monkeypatch, tmp_path):
     _stub(monkeypatch, {"a.jsonl": b'{"role":"user"}'})
     written = list(
         fetch.download(
-            "hf",
-            [fetch.Remote("logs/a.jsonl", "https://huggingface.co/a.jsonl")],
+            "direct",
+            [fetch.Remote("logs/a.jsonl", "https://example.com/a.jsonl")],
             tmp_path,
             {},
         )
@@ -384,7 +324,7 @@ def test_a_remote_name_cannot_escape_the_directory(monkeypatch, tmp_path, name):
     """The listing is remote data; a crafted path must not write outside."""
     _stub(monkeypatch, {"x": b"{}"})
     written = list(
-        fetch.download("hf", [fetch.Remote(name, "https://huggingface.co/x")], tmp_path, {})
+        fetch.download("direct", [fetch.Remote(name, "https://example.com/x")], tmp_path, {})
     )
     for path in written:
         assert path.resolve().is_relative_to(tmp_path.resolve()), f"escaped: {path}"
@@ -433,13 +373,6 @@ def test_a_parent_of_home_is_refused():
 def test_an_ordinary_folder_under_home_is_fine():
     target = fetch.destination("~/Documents/transcript-downloads")
     assert target.is_relative_to(Path.home().resolve())
-
-
-def test_a_repository_reports_where_to_browse_it(monkeypatch):
-    """A collection built from a repo links back to the folder it mirrors."""
-    _stub(monkeypatch, {"api/datasets": [{"type": "file", "path": "a.jsonl"}]})
-    plan = fetch.plan("https://huggingface.co/datasets/owner/name/tree/v2/inner", {})
-    assert plan.web == "https://huggingface.co/datasets/owner/name/tree/v2"
 
 
 def test_a_github_repository_reports_where_to_browse_it(monkeypatch):
@@ -647,11 +580,11 @@ def test_too_many_objects_suggests_a_prefix(monkeypatch):
 
 
 def test_a_web_repository_is_told_to_use_a_subdirectory_instead(monkeypatch):
-    _stub(monkeypatch, {"api/datasets": [
-        {"type": "file", "path": f"{i}.jsonl"} for i in range(fetch.MAX_FILES + 1)
-    ]})
+    _stub(monkeypatch, {"git/trees": {"tree": [
+        {"type": "blob", "path": f"{i}.jsonl"} for i in range(fetch.MAX_FILES + 1)
+    ]}})
     with pytest.raises(fetch.FetchError, match="Point at a subdirectory"):
-        fetch.plan("https://huggingface.co/datasets/owner/name", {})
+        fetch.plan("https://github.com/owner/name/tree/main", {})
 
 
 # ---- browsing a level at a time ----------------------------------------------------
@@ -689,17 +622,6 @@ def test_github_browsing_reads_one_level(monkeypatch):
     nodes = fetch.browse("https://github.com/owner/name/tree/main/logs", "", {})
     assert [(n.kind, n.name) for n in nodes] == [
         ("folder", "inner"), ("file", "a.jsonl"), ("file", "notes.md"),
-    ]
-
-
-def test_hf_browsing_reads_one_level(monkeypatch):
-    _stub(monkeypatch, {"api/datasets": [
-        {"type": "directory", "path": "attacks", "size": 0},
-        {"type": "file", "path": "manifest.json", "size": 9},
-    ]})
-    nodes = fetch.browse("https://huggingface.co/datasets/owner/name", "", {})
-    assert [(n.kind, n.name) for n in nodes] == [
-        ("folder", "attacks"), ("file", "manifest.json"),
     ]
 
 
@@ -751,32 +673,32 @@ def test_a_prefix_name_cannot_be_smuggled_past_the_pattern(monkeypatch):
 def test_a_ticked_folder_in_a_repo_subdirectory_matches(monkeypatch):
     """Browse paths are relative to the URL's folder; a plan names files from the
     repository root. Without rebasing, ticking a folder matched nothing at all."""
-    _stub(monkeypatch, {"api/datasets": [
-        {"type": "file", "path": "attacks/model_priors/a/transcript.jsonl", "size": 10},
-        {"type": "file", "path": "attacks/model_priors/b/transcript.jsonl", "size": 20},
-        {"type": "file", "path": "attacks/counting/c/transcript.jsonl", "size": 40},
-    ]})
-    url = "https://huggingface.co/datasets/o/n/tree/main/attacks"
+    _stub(monkeypatch, {"git/trees": {"tree": [
+        {"type": "blob", "path": "attacks/model_priors/a/transcript.jsonl", "size": 10},
+        {"type": "blob", "path": "attacks/model_priors/b/transcript.jsonl", "size": 20},
+        {"type": "blob", "path": "attacks/counting/c/transcript.jsonl", "size": 40},
+    ]}})
+    url = "https://github.com/o/n/tree/main/attacks"
     got = fetch.measure(url, ["model_priors"], {})
     assert got == {"files": 2, "bytes": 30, "capped": False}
 
 
 def test_the_same_rebasing_applies_when_downloading(monkeypatch):
-    _stub(monkeypatch, {"api/datasets": [
-        {"type": "file", "path": "attacks/model_priors/a/transcript.jsonl", "size": 10},
-        {"type": "file", "path": "attacks/counting/c/transcript.jsonl", "size": 40},
-    ]})
-    url = "https://huggingface.co/datasets/o/n/tree/main/attacks"
+    _stub(monkeypatch, {"git/trees": {"tree": [
+        {"type": "blob", "path": "attacks/model_priors/a/transcript.jsonl", "size": 10},
+        {"type": "blob", "path": "attacks/counting/c/transcript.jsonl", "size": 40},
+    ]}})
+    url = "https://github.com/o/n/tree/main/attacks"
     plan = fetch.select(url, ["model_priors"], {})
     assert [f.name for f in plan.files] == ["attacks/model_priors/a/transcript.jsonl"]
 
 
 def test_a_repository_root_needs_no_rebasing(monkeypatch):
-    _stub(monkeypatch, {"api/datasets": [
-        {"type": "file", "path": "logs/a.jsonl", "size": 1},
-        {"type": "file", "path": "other/b.jsonl", "size": 2},
-    ]})
-    got = fetch.measure("https://huggingface.co/datasets/o/n", ["logs"], {})
+    _stub(monkeypatch, {"git/trees": {"tree": [
+        {"type": "blob", "path": "logs/a.jsonl", "size": 1},
+        {"type": "blob", "path": "other/b.jsonl", "size": 2},
+    ]}})
+    got = fetch.measure("https://github.com/o/n/tree/main", ["logs"], {})
     assert got["files"] == 1
 
 

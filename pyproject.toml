@@ -16,18 +16,6 @@ license = { text = "MIT" }
 # viewer being broken rather than the converter being old.
 dependencies = ["atif-make>=0.8.0"]
 
-[project.optional-dependencies]
-# Claude-backed explanations are opt-in, so the default install stays
-# dependency-free: pip install "transcript-viewer[ai]"
-# Datasets published as Parquet — METR's transcripts are the one so far. The
-# reader lives in atif-make, which only needs it to split a shard.
-parquet = ["atif-make[parquet]>=0.8.0"]
-ai = ["anthropic>=0.40"]
-# Only for a deployment serving more than one person. Two copies of the server
-# with two SQLite files means one person's stars exist on one and not the other,
-# which is a wrong answer rather than a slow one.
-postgres = ["psycopg[binary]>=3.1"]
-
 [project.scripts]
 transcript-viewer = "transcript_viewer.cli:main"
 

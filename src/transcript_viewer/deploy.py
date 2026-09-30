@@ -42,10 +42,8 @@ WHERE = {
     "admins": "identity.admins",
     "database": "storage.database",
     "secrets": "secrets.mode",
-    "ai": "ai.enabled",
     "cache_bytes": "cache.bytes",
     "sources": "sources.urls",
-    "scan_roots": "scan.roots",
     "name": "name",
 }
 
@@ -80,15 +78,6 @@ class Deployment:
     # them at all.
     secrets: str = "user"
 
-    # Whether the model may be reached at all. The transcripts in a deployment
-    # are not always the operator's to send anywhere: a run classified above
-    # the lowest level is still classified once it has been summarised, and the
-    # summarising is an egress to a third party. On by default because that is
-    # what a laptop does with the operator's own logs and their own key; a
-    # deployment holding somebody else's transcripts turns it off and no key,
-    # typed or configured, brings it back.
-    ai: str = "on"
-
     # How much converted output to keep in memory, in bytes. The default suits
     # a laptop; a container sized smaller than it will be killed holding it.
     cache_bytes: str = ""
@@ -97,12 +86,6 @@ class Deployment:
     # fed from a bucket names it once here rather than in whatever runs the
     # schedule, so the two cannot disagree about what this holds.
     sources: tuple[str, ...] = ()
-
-    # What `/api/scan` is allowed to index. Empty keeps the historic default —
-    # this machine's own agent directories — which is right on a laptop and
-    # wrong on a shared host, where it would serve the operator's own history
-    # to everyone who visits.
-    scan_roots: tuple[str, ...] = ()
 
     name: str = "Transcript Viewer"
 

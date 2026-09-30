@@ -23,11 +23,6 @@ from . import store
 from atif_make.convert import AGENTS
 from atif_make.detect import detect_format, head_lines
 
-DEFAULT_ROOTS = (
-    Path.home() / ".claude" / "projects",
-    Path.home() / ".codex" / "sessions",
-)
-
 INDEX_PATH = store.ROOT / "index.json"
 # Where the viewer keeps files brought in by hand. Anything here is "opened"
 # whoever asks, so a plain rescan classifies them correctly on its own.
@@ -273,12 +268,12 @@ def _split_home(path: Path) -> Path:
     return SPLIT_ROOT / content_key(path)[:16]
 
 
-def scan(roots: list[Path] | None = None, origin: str = "scanned") -> list[Entry]:
+def scan(roots: list[Path], origin: str = "scanned") -> list[Entry]:
     """Find every convertible log under ``roots``. A root may be a single file."""
     entries: list[Entry] = []
     seen: set[Path] = set()
 
-    for root in roots or list(DEFAULT_ROOTS):
+    for root in roots:
         if not root.exists():
             continue
         if root.is_file():
@@ -314,7 +309,6 @@ def scan(roots: list[Path] | None = None, origin: str = "scanned") -> list[Entry
                 + sorted(where.rglob("*.json"))
                 + sorted(where.rglob("*.md"))
                 # Not a log, but a container of them, opened above.
-                + sorted(where.rglob("*.parquet"))
                 + sorted(where.rglob("*.eval"))
             )
         for path in candidates:

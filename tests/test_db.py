@@ -9,7 +9,6 @@ everyone else's provenance.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from pathlib import Path
 
@@ -95,7 +94,6 @@ def test_an_import_keeps_provenance_apart_from_opinion(room, tmp_path):
                 "starred": True,
                 "starred_steps": ["3"],
                 "note": "why",
-                "summaries": {"call_1": "did a thing"},
                 "source": "s3://b/y",
             },
         },
@@ -162,13 +160,7 @@ def test_a_damaged_column_costs_its_own_field_and_no_more(raw, fallback, want):
     assert db.loads(raw, fallback) == want
 
 
-def test_the_sql_stays_portable():
-    """The store runs on SQLite locally and PostgreSQL where more than one copy
-    is serving, and the SQL is written once. Two spellings that only SQLite
-    understands were already in it and had to go: `rowid` for insertion order,
-    which no other engine has, and a column called `user`, which is a reserved
-    word. Both work perfectly until the day the second store is tried.
-    """
+def test_the_sql_does_not_depend_on_implicit_row_order():
     import re
     from pathlib import Path
 
@@ -187,11 +179,10 @@ def test_the_sql_stays_portable():
             assert "rowid" not in line.lower(), (
                 f"{name} orders by `rowid`, which only SQLite has: {bare}"
             )
-            # The one line allowed to say it is the one that renames it away.
             if "RENAME COLUMN user TO user_id" in line:
                 continue
             assert not re.search(r"\buser\b(?!_id)", line), (
-                f"{name} names a column `user`, which PostgreSQL reserves: {bare}"
+                f"{name} still uses the old `user` column: {bare}"
             )
 
 
@@ -296,61 +287,42 @@ class _Fake:
         pass
 
 
-def test_the_same_sql_reaches_each_engine_in_its_own_dialect():
-    """The whole portability layer. It is this thin on purpose — the four
-    tables need upserts, `EXISTS` and indexes, all spelled the same in both,
-    and only the placeholders actually differ."""
+def test_sql_reaches_sqlite_unchanged():
     sql = "INSERT INTO marks(content_hash, user_id) VALUES (?,?)"
 
     lite = _Fake()
-    db.Store(lite, postgres=False).execute(sql, ("h", ""))
+    db.Store(lite).execute(sql, ("h", ""))
     assert lite.asked[0][0] == sql
-
-    pg = _Fake()
-    db.Store(pg, postgres=True).execute(sql, ("h", ""))
-    assert pg.asked[0][0] == (
-        "INSERT INTO marks(content_hash, user_id) VALUES (%s,%s)"
-    )
 
 
 def test_a_script_goes_through_the_engine_rather_than_a_split():
     """Splitting on semicolons turned the comments in the schema into
     statements, and the halves were not SQL."""
     lite = _Fake()
-    db.Store(lite, postgres=False).script(db._SETUP)
+    db.Store(lite).script(db._SETUP)
     assert lite.scripts == [db._SETUP] and not lite.asked
 
-    pg = _Fake()
-    db.Store(pg, postgres=True).script(db._SETUP)
-    assert pg.asked[0][0] == db._SETUP
 
-
-def test_taking_the_write_lock_early_is_asked_of_sqlite_only():
-    """`update` reads a record and writes it back, so two of them must not both
-    read first. PostgreSQL is asked for it differently, by its own driver."""
+def test_taking_the_write_lock_early_is_asked_of_sqlite():
+    """`update` reads a record and writes it back, so two cannot read first."""
     lite = _Fake()
-    db.Store(lite, postgres=False).begin()
+    db.Store(lite).begin()
     assert lite.asked[0][0] == "BEGIN IMMEDIATE"
-
-    pg = _Fake()
-    db.Store(pg, postgres=True).begin()
-    assert pg.asked == []
 
 
 def test_an_empty_executemany_asks_nothing():
     """`update` rewrites a record's tags by deleting and re-inserting them, and
     a record with no tags would otherwise send an INSERT with no rows."""
     fake = _Fake()
-    db.Store(fake, postgres=False).executemany("INSERT INTO tags VALUES (?,?,?)", [])
+    db.Store(fake).executemany("INSERT INTO tags VALUES (?,?,?)", [])
     assert fake.asked == []
 
 
 def _exercise(where) -> dict:
     """Put a store through its paces and report only what a caller can see.
 
-    Returned rather than asserted so the same sequence can be run against both
-    engines and the answers compared. That comparison is the property worth
-    having: not that PostgreSQL works, but that it agrees.
+    Returned so the complete sequence can be asserted without coupling each
+    operation to storage details.
     """
     from transcript_viewer import library
 
@@ -374,60 +346,20 @@ def _exercise(where) -> dict:
     return seen
 
 
-@pytest.mark.skipif(
-    not os.environ.get("TRANSCRIPT_VIEWER_TEST_DATABASE"),
-    reason="set TRANSCRIPT_VIEWER_TEST_DATABASE to a PostgreSQL URL to run this",
-)
-def test_postgresql_and_sqlite_give_the_same_answers(tmp_path):
-    """The only test here that runs the second engine rather than the
-    translation into it. Skipped without a database, and named so its absence
-    from a run is visible rather than assumed.
-
-        docker run --rm -e POSTGRES_PASSWORD=x -p 5432:5432 -d postgres:16
-        TRANSCRIPT_VIEWER_TEST_DATABASE=postgresql://postgres:x@localhost/postgres \\
-          uv run --extra parquet --extra postgres pytest -q tests/test_db.py
-    """
-    url = os.environ["TRANSCRIPT_VIEWER_TEST_DATABASE"]
-
-    conn = db.connect(url)
-    for table in ("labels", "tags", "marks", "transcripts", "schema_version"):
-        conn.execute(f"DROP TABLE IF EXISTS {table}")
-    conn._conn.commit()
-    db.close(url)
-
-    on_postgres = _exercise(url)
-    db.close(url)
-
+def test_sqlite_handles_the_full_library_sequence(tmp_path):
     lite = tmp_path / "library.db"
     on_sqlite = _exercise(lite)
     db.close(lite)
 
-    assert on_postgres == on_sqlite
-    # And not vacuously: the sequence has to have done something.
     assert on_sqlite["written"]["tags"] == ["b", "a"], "insertion order, not sorted"
     assert on_sqlite["and once nothing is left"] == {}
 
 
-
-def test_a_database_url_is_not_turned_into_a_filename():
-    """`Path("postgresql://x")` collapses the `//` to one slash, which stops
-    looking like a URL and starts looking like a relative filename. That opened
-    a SQLite file named after the database it was meant to be — and made a test
-    comparing the two engines compare SQLite with itself, passing."""
-    url = "postgresql://postgres:x@localhost/postgres"
-
-    assert db._where(url) == url
-    assert db._postgres(db._where(url))
-    # And the shape that caused it, so the coercion cannot come back.
-    assert not db._postgres(str(Path(url)))
+def test_a_database_path_is_normalised_to_text(tmp_path):
+    assert db._where(tmp_path / "library.db") == str(tmp_path / "library.db")
 
 
-def test_only_one_kind_of_placeholder_is_used():
-    """The translation into PostgreSQL is a single substitution of `?`. A named
-    placeholder passes straight through it and reaches the driver as a colon
-    the server does not understand — which is what `:k` did, in the one query
-    that decides whether a record is still worth keeping.
-    """
+def test_only_sqlite_placeholders_are_used():
     import re
     from pathlib import Path
 

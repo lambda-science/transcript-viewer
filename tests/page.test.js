@@ -425,311 +425,26 @@ test("raw text that is not JSON is left as text", () => {
   assert.ok(!/class="j-/.test(out.html));
 });
 
-test("AI controls stay hidden until a credential is configured", () => {
-  const seed = `cur="k";INDEX=[{key:"k",summaries:{}}];
-    CALLS["a"]={c:{function_name:"Bash",tool_call_id:"a",arguments:{command:"ls"}},r:null};`;
-  assert.ok(
-    !run(`AI={};` + seed + `return toolBody("a");`).includes(
-      "explain this call",
-    ),
-    "a call was offered to the model with no key configured",
-  );
-  assert.match(
-    run(`AI={available:true};` + seed + `return toolBody("a");`),
-    /explain this call/,
-  );
-});
-
-test("an answer renders while it is still arriving", () => {
-  const html = run(`
-    CHAT=[{q:"why",a:"partly writ",steps:[],busy:true}];
-    return turnsHTML();`);
-  assert.match(html, /partly writ/);
-  assert.match(
-    html,
-    /class="askq">why</,
-    "the question is not shown above its answer",
-  );
-  assert.ok(
-    !html.includes("askref"),
-    "step count shown before the steps are known",
-  );
-});
-
-test("thinking is shown as thinking, not as an empty answer", () => {
-  const html = run(`
-    CHAT=[{q:"why",a:"",steps:[],busy:true,thinking:true}];
-    return turnsHTML();`);
-  assert.match(html, /Thinking…/);
-  assert.match(html, /class="askout busy"/, "no caret while thinking");
-});
-
-test("the first token replaces the thinking notice", () => {
-  const html = run(`
-    CHAT=[{q:"why",a:"because",steps:[],busy:true,thinking:false}];
-    return turnsHTML();`);
-  assert.ok(!/Thinking…/.test(html));
-  assert.match(html, /because/);
-});
-
-test("coverage appears once the steps frame lands", () => {
-  const html = run(`
-    CHAT=[{q:"why",a:"done",steps:[3,9],total:80,busy:false}];
-    return turnsHTML();`);
-  assert.match(html, /read 2 of 80 steps/);
-});
-
-test("an error replaces that turn's answer rather than appending to it", () => {
-  const html = run(`
-    CHAT=[{q:"q",a:"",error:"Rate limited",busy:false,steps:[]}];
-    return turnsHTML();`);
-  assert.match(html, /class="askout bad"/);
-  assert.match(html, /Rate limited/);
-});
-
-test("nothing renders before a question is asked", () => {
-  assert.strictEqual(run(`CHAT=[];return turnsHTML();`), "");
-});
-
-test("a conversation keeps every turn, in order", () => {
-  const html = run(`
-    CHAT=[{q:"first",a:"one",steps:[1],busy:false},
-          {q:"second",a:"two",steps:[2],busy:false}];
-    return turnsHTML();`);
-  assert.ok(
-    html.indexOf("first") < html.indexOf("second"),
-    "turns out of order",
-  );
-  assert.strictEqual(html.match(/class="turn"/g).length, 2);
-});
-
-test("a question is escaped, not rendered as markup", () => {
-  const html = run(`
-    CHAT=[{q:"<img src=x onerror=alert(1)>",a:"a",steps:[],busy:false}];
-    return turnsHTML();`);
-  assert.ok(!html.includes("<img"), "a question was rendered as HTML");
-  assert.match(html, /&lt;img/);
-});
-
-test("the panel offers a follow-up prompt once a conversation exists", () => {
-  assert.match(run(`CHAT=[];return askInner();`), /Ask about this transcript/);
-  assert.match(
-    run(`CHAT=[{q:"a",a:"b",steps:[],busy:false}];return askInner();`),
-    /Ask a follow-up/,
-  );
-});
-
-test("the panel is collapsible and remembers being open", () => {
-  const shut = run(`ASK_OPEN=false;return aiStrip();`);
-  assert.match(shut, /<details class="ask"/);
-  assert.ok(!/<details class="ask" open/.test(shut));
-
-  const open = run(`ASK_OPEN=true;return aiStrip();`);
-  assert.match(open, /<details class="ask" open/);
-});
-
-test("a streamed response is read frame by frame", async () => {
-  const frames = [];
-  const body = [
-    '{"t":"steps","steps":[1,2]}\n{"t":"delta","text":"he',
-    'llo "}\n{"t":"delta","text":"there"}\n',
-    '{"t":"done"}',
-  ];
-  globalThis.__frames = frames;
-  await run(`
-    globalThis.fetch=async()=>({ok:true,body:{getReader(){
-      const parts=${JSON.stringify(body)}.map(s=>new TextEncoder().encode(s));
-      let i=0;
-      return {read:async()=>i<parts.length?{done:false,value:parts[i++]}:{done:true}};
-    }}});
-    cur="k";
-    return streamClaude({what:"ask"},f=>globalThis.__frames.push(f));`);
-  assert.deepStrictEqual(
-    frames.map((f) => f.t),
-    ["steps", "delta", "delta", "done"],
-  );
-  assert.strictEqual(frames[1].text + frames[2].text, "hello there");
-});
-
-test("an error frame throws rather than rendering as an answer", async () => {
-  await assert.rejects(
-    run(`
-      globalThis.fetch=async()=>({ok:true,body:{getReader(){
-        const one=new TextEncoder().encode('{"t":"error","error":"model refused"}');
-        let sent=false;
-        return {read:async()=>sent?{done:true}:((sent=true),{done:false,value:one})};
-      }}});
-      cur="k";
-      return streamClaude({what:"ask"},()=>{});`),
-    /model refused/,
-  );
-});
-
-test("a refusal before the stream opens surfaces its status message", async () => {
-  await assert.rejects(
-    run(`
-      globalThis.fetch=async()=>({ok:false,status:501,
-        json:async()=>({error:"AI features are not configured here."})});
-      cur="k";
-      return streamClaude({what:"ask"},()=>{});`),
-    /not configured/,
-  );
-});
-
-test("coverage says what was read against the whole transcript", () => {
-  const partial = run(
-    `return coverage({steps:new Array(40).fill(0),total:312});`,
-  );
-  assert.match(partial, /read 40 of 312 steps/);
-});
-
-test("coverage says so plainly when the whole transcript was read", () => {
-  assert.match(
-    run(`return coverage({steps:[1,2,3],total:3});`),
-    /read all 3 steps/,
-  );
-  assert.match(
-    run(`return coverage({steps:[1],total:1});`),
-    /read all 1 step</,
-  );
-});
-
-test("coverage is omitted until the steps are known", () => {
-  assert.strictEqual(run(`return coverage({steps:[],total:0});`), "");
-});
-
-test("a cited step becomes a link to that step", () => {
-  const html = run(`return linkSteps("<p>the parser retried (step 12).</p>");`);
-  assert.match(html, /jumpToStep\(12\)/);
-  assert.match(html, />12</);
-});
-
-test("several cited steps each become their own link", () => {
-  const html = run(`return linkSteps("<p>see steps 4, 9 and 11.</p>");`);
-  assert.deepStrictEqual(
-    [...html.matchAll(/jumpToStep\((\d+)\)/g)].map((m) => m[1]),
-    ["4", "9", "11"],
-  );
-});
-
-test("a number inside code is left alone", () => {
-  const html = run(`return linkSteps("<p>run <code>step 7</code> now</p>");`);
-  assert.ok(!/jumpToStep/.test(html), "linked a step number inside code");
-});
-
-test("a number in a code block is left alone", () => {
-  const block = '<pre class="code"><code>step 3</code></pre>';
-  const html = run(`return linkSteps(${JSON.stringify(block)});`);
-  assert.ok(!/jumpToStep/.test(html));
-});
-
-test("prose that is not a citation is left alone", () => {
-  for (const text of [
-    "it took 40 attempts",
-    "step by step",
-    "stepped through",
-  ]) {
-    assert.ok(
-      !run(
-        `return linkSteps(${JSON.stringify("<p>" + text + "</p>")});`,
-      ).includes("jumpToStep"),
-      `linked a non-citation in: ${text}`,
-    );
-  }
-});
-
-test("jumping to a step nobody has is ignored rather than throwing", () => {
-  assert.doesNotThrow(() =>
-    run(`traj={steps:[{step_id:1}]};return jumpToStep(99);`),
-  );
-});
-
-test("only the streaming turn is rewritten while text arrives", () => {
-  const written = [];
-  const out = run(
-    `
-    CHAT=[{q:"one",a:"first",steps:[1],total:9,busy:false},
-          {q:"two",a:"grow",steps:[2],total:9,busy:true}];
-    const body={className:"",set innerHTML(v){globalThis.__written.push(v)}};
-    const turn={querySelector:()=>body};
-    document.querySelector=sel=>sel===".turns"
-      ?{querySelectorAll:()=>[{},turn],querySelector:()=>null,
-        set innerHTML(v){globalThis.__written.push("WHOLE")}}
-      :null;
-    return drawTurns();`,
-    (globalThis.__written = written),
-  );
-  assert.strictEqual(written.length, 1, "more than one node was written");
-  assert.ok(
-    !written[0].includes("WHOLE"),
-    "the whole conversation was rebuilt",
-  );
-  assert.match(written[0], /grow/);
-  assert.ok(!written[0].includes("first"), "an earlier answer was re-rendered");
-});
-
-test("a call with a cached summary shows it instead of a button", () => {
-  const html = run(`
-    AI={available:true};cur="k";
-    INDEX=[{key:"k",summaries:{c1:"It listed the directory."}}];
-    return callSummary("c1");`);
-  assert.match(html, /It listed the directory/);
-  assert.ok(
-    !html.includes("aibtn"),
-    "still asking for something already paid for",
-  );
-  assert.ok(!html.includes("hidden"), "the cached summary is hidden");
-});
-
-test("a call without one still offers the button", () => {
-  const html = run(`
-    AI={available:true};cur="k";INDEX=[{key:"k",summaries:{}}];
-    return callSummary("c2");`);
-  assert.match(html, /explain this call/);
-  assert.match(html, /hidden/);
-});
-
-test("a blank cached summary is not treated as one", () => {
-  const html = run(`
-    AI={available:true};cur="k";INDEX=[{key:"k",summaries:{c3:"   "}}];
-    return callSummary("c3");`);
-  assert.match(html, /explain this call/);
-});
-
-test("a session with no annotations at all does not throw", () => {
-  assert.doesNotThrow(() =>
-    run(
-      `AI={available:true};cur="k";INDEX=[{key:"k"}];return callSummary("c9");`,
-    ),
-  );
-});
-
 test("the sheet has a field for every credential the server can hold", () => {
   const html = run(`
-    AI={secrets:{
-      anthropic:{label:"Anthropic API key",placeholder:"sk-ant-…",env:"ANTHROPIC_API_KEY",source:"",hint:""},
-      hf:{label:"Hugging Face token",placeholder:"hf_…",env:"HF_TOKEN",source:"",hint:""},
+    SETTINGS={secrets:{
       github:{label:"GitHub token",placeholder:"ghp_…",env:"GITHUB_TOKEN",source:"",hint:""}}};
     const host={innerHTML:""};
     document.getElementById=id=>id==="secrets"?host:null;
     drawSecrets();
     return host.innerHTML;`);
-  for (const label of [
-    "Anthropic API key",
-    "Hugging Face token",
-    "GitHub token",
-  ]) {
+  for (const label of ["GitHub token"]) {
     assert.ok(html.includes(label), `no field for ${label}`);
   }
-  // Three tokens plus the AWS profile, which is a name rather than a secret.
-  assert.strictEqual(html.match(/class="secret"/g).length, 4);
+  // One token plus the AWS profile, which is a name rather than a secret.
+  assert.strictEqual(html.match(/class="secret"/g).length, 2);
   assert.match(html, /AWS profile/);
 });
 
 test("a saved token shows as dots with its tail, never as a value", () => {
   const html = run(`
-    AI={secrets:{hf:{label:"Hugging Face token",placeholder:"hf_…",
-      env:"HF_TOKEN",source:"settings",hint:"\u2026GQAA"}}};
+    SETTINGS={secrets:{github:{label:"GitHub token",placeholder:"ghp_…",
+      env:"GITHUB_TOKEN",source:"settings",hint:"\u2026GQAA"}}};
     const host={innerHTML:""};
     document.getElementById=id=>id==="secrets"?host:null;
     drawSecrets();
@@ -744,7 +459,7 @@ test("a saved token shows as dots with its tail, never as a value", () => {
 
 test("a token from the environment names the variable rather than showing dots", () => {
   const html = run(`
-    AI={secrets:{github:{label:"GitHub token",placeholder:"ghp_…",
+    SETTINGS={secrets:{github:{label:"GitHub token",placeholder:"ghp_…",
       env:"GITHUB_TOKEN",source:"environment",hint:""}}};
     const host={innerHTML:""};
     document.getElementById=id=>id==="secrets"?host:null;
@@ -759,18 +474,18 @@ test("a token from the environment names the variable rather than showing dots",
 
 test("an unset token prompts for one", () => {
   const html = run(`
-    AI={secrets:{hf:{label:"Hugging Face token",placeholder:"hf_…",
-      env:"HF_TOKEN",source:"",hint:""}}};
+    SETTINGS={secrets:{github:{label:"GitHub token",placeholder:"ghp_…",
+      env:"GITHUB_TOKEN",source:"",hint:""}}};
     const host={innerHTML:""};
     document.getElementById=id=>id==="secrets"?host:null;
     drawSecrets();
     return host.innerHTML;`);
-  assert.match(html, /placeholder="hf_…"/);
+  assert.match(html, /placeholder="ghp_…"/);
 });
 
 test("a label from the server is escaped, not rendered as markup", () => {
   const html = run(`
-    AI={secrets:{x:{label:"<img src=x onerror=alert(1)>",placeholder:"p",
+    SETTINGS={secrets:{x:{label:"<img src=x onerror=alert(1)>",placeholder:"p",
       env:"E",source:"",hint:""}}};
     const host={innerHTML:""};
     document.getElementById=id=>id==="secrets"?host:null;
@@ -845,7 +560,7 @@ test("a finished download refreshes the index before anything else can fail", as
           sent?{done:true}:((sent=true),{done:false,value:chunk})})}};
       }
       return {ok:true,json:async()=>({sessions:[{key:"a"},{key:"b"}],folders:[],
-        tags:[],ai:{},downloads:"/tmp/x"})};
+        tags:[],settings:{},downloads:"/tmp/x"})};
     };
     // Break what the toast depends on, rather than replacing the toast: the
     // point is that the real note() cannot abort the handler.
@@ -863,21 +578,21 @@ test("a finished download refreshes the index before anything else can fail", as
 
 test("collapsing a node hides everything beneath it, not just its children", () => {
   const rows = run(`
-    GROUPS=["Remote","Remote/Hugging Face","Remote/Hugging Face/owner",
-            "Remote/Hugging Face/owner/repo","Remote/Hugging Face/owner/repo/attacks",
-            "Remote/Hugging Face/owner/repo/attacks/one"];
-    INDEX=[{key:"a",group:"Remote/Hugging Face/owner/repo/attacks/one"}];
+    GROUPS=["Remote","Remote/GitHub","Remote/GitHub/owner",
+            "Remote/GitHub/owner/repo","Remote/GitHub/owner/repo/attacks",
+            "Remote/GitHub/owner/repo/attacks/one"];
+    INDEX=[{key:"a",group:"Remote/GitHub/owner/repo/attacks/one"}];
     // Everything open, then one node in the middle closed.
     EXPANDED={};
     for(const g of GROUPS)EXPANDED[g]=true;
-    EXPANDED["Remote/Hugging Face/owner/repo"]=false;
+    EXPANDED["Remote/GitHub/owner/repo"]=false;
     return visibleRails().map(r=>r.path);`);
   assert.ok(
-    rows.includes("Remote/Hugging Face/owner/repo"),
+    rows.includes("Remote/GitHub/owner/repo"),
     "the closed node itself vanished",
   );
   const beneath = rows.filter((p) =>
-    p.startsWith("Remote/Hugging Face/owner/repo/"),
+    p.startsWith("Remote/GitHub/owner/repo/"),
   );
   assert.deepStrictEqual(beneath, [], `still showing: ${beneath.join(", ")}`);
 });
@@ -957,7 +672,7 @@ test("the warning names how many copies the viewer would delete", async () => {
   assert.strictEqual(asked.length, 1);
   assert.match(asked[0], /all 3 sessions/);
   assert.match(asked[0], /1 copy the viewer made itself/);
-  assert.match(asked[0], /cached AI summaries/);
+  assert.match(asked[0], /Titles, tags and stars/);
 });
 
 test("with nothing of ours, the warning says files simply stay", async () => {
@@ -969,45 +684,6 @@ test("with nothing of ours, the warning says files simply stay", async () => {
     return clearLibrary();`);
   assert.match(asked[0], /Files stay where they are\./);
   assert.ok(!asked[0].includes("viewer made"));
-});
-
-test("looking on this machine reports what it found", async () => {
-  const notes = [];
-  globalThis.__notes = notes;
-  await run(`
-    document.getElementById=()=>null;
-    return new Promise(done=>setTimeout(done,0)).then(()=>{
-      INDEX=[{key:"a"}];
-      cur=null;
-      globalThis.__notes.length=0;
-      showLibrary=()=>{};
-      note=m=>{globalThis.__notes.push(m)};
-      globalThis.fetch=async(url)=>({ok:true,json:async()=>url==="/api/scan"
-        ?{found:2,total:3}
-        :{sessions:[{key:"a"},{key:"b"},{key:"c"}],groups:[],tags:[],ai:{}}});
-      return scanMachine();
-    });`);
-  assert.match(notes[0], /Looking on this machine/);
-  assert.match(notes[notes.length - 1], /2 new sessions/);
-});
-
-test("looking again when there is nothing new says so", async () => {
-  const notes = [];
-  globalThis.__notes = notes;
-  await run(`
-    document.getElementById=()=>null;
-    return new Promise(done=>setTimeout(done,0)).then(()=>{
-      INDEX=[{key:"a"}];
-      cur=null;
-      globalThis.__notes.length=0;
-      showLibrary=()=>{};
-      note=m=>{globalThis.__notes.push(m)};
-      globalThis.fetch=async(url)=>({ok:true,json:async()=>url==="/api/scan"
-        ?{found:0,total:1}
-        :{sessions:[{key:"a"}],groups:[],tags:[],ai:{}}});
-      return scanMachine();
-    });`);
-  assert.match(notes[notes.length - 1], /Nothing new here/);
 });
 
 test("Local is offered even when the library is empty", () => {
@@ -1024,22 +700,6 @@ test("Local is not doubled once it has sessions", () => {
     EXPANDED={};
     return visibleRails().map(r=>r.path);`);
   assert.deepStrictEqual(rows, ["__all", "Local"]);
-});
-
-test("Local refreshes by looking again; a remote one by fetching again", () => {
-  const html = run(`
-    INDEX=[{key:"a",group:"Local"},{key:"b",group:"Remote/S3/bucket",source:"s3://bucket"}];
-    GROUPS=["Local","Remote","Remote/S3","Remote/S3/bucket"];
-    EXPANDED={"Remote":true,"Remote/S3":true};
-    const el={innerHTML:""};
-    list=el;tagbar={innerHTML:""};
-    drawList();
-    return el.innerHTML;`);
-  assert.match(html, /scanMachine\(\)/, "Local has no way to look again");
-  assert.match(
-    html,
-    /refreshGroup\(&#39;Remote\/S3\/bucket&#39;\)|refreshGroup\('Remote\/S3\/bucket'\)/,
-  );
 });
 
 test("an s3 source is shown but not linked, having no page to open", () => {
@@ -1135,13 +795,13 @@ test("ticking a folder drops the redundant ticks inside it", () => {
 
 test("the profile is a chooser only when there is a choice", () => {
   const one = run(
-    `AI={aws_profiles:["rw-eng"],aws_profile:""};return awsField();`,
+    `SETTINGS={aws_profiles:["rw-eng"],aws_profile:""};return awsField();`,
   );
   assert.ok(!one.includes("<select"), "asked to choose between one thing");
   assert.match(one, /nothing to set here/);
 
   const many = run(
-    `AI={aws_profiles:["a","b"],aws_profile:"b"};return awsField();`,
+    `SETTINGS={aws_profiles:["a","b"],aws_profile:"b"};return awsField();`,
   );
   assert.match(many, /<select/);
   assert.match(many, /value="b" selected/);
@@ -1183,19 +843,17 @@ test("every example names a place the fetcher can actually reach", () => {
     assert.ok(e.name, "an example without a name is a blank button");
     assert.match(
       e.url,
-      /^(https:\/\/(huggingface\.co|github\.com)\/|s3:\/\/)/,
+      /^(https:\/\/github\.com\/|s3:\/\/)/,
       `${e.name}: not a scheme the fetcher handles`,
     );
   }
-  // Both kinds are worth offering: one needs no credentials, one does.
-  assert.ok(egs.some((e) => e.url.startsWith("https://huggingface.co/")));
-  assert.ok(egs.some((e) => e.url.startsWith("s3://")));
+  assert.ok(egs.every((e) => e.url.startsWith("s3://")));
 });
 
 test("an example that needs credentials says so", () => {
   const egs = run(`return EXAMPLES;`);
   for (const e of egs) {
-    if (e.url.startsWith("s3://") || /sleightbench/.test(e.url)) {
+    if (e.url.startsWith("s3://")) {
       assert.ok(e.note, `${e.name} needs something first and does not say so`);
     }
   }
@@ -1318,7 +976,7 @@ test("the examples are rendered, not printed as template source", () => {
   run(`
     document.getElementById=id=>id==="egs"?globalThis.__host:null;
     drawExamples();`);
-  assert.match(host.innerHTML, /SLEIGHT-Bench/);
+  assert.match(host.innerHTML, /Redwood agent transcripts/);
   assert.match(host.innerHTML, /Redwood agent transcripts/);
   assert.match(host.innerHTML, /useExample\(0\)/);
   assert.ok(
@@ -1371,13 +1029,13 @@ test("the tree still groups by directory, not by name", () => {
 
 test("a deep path reads as a trail, not a wall", () => {
   const html = run(`return crumbPath(
-    "Remote/Hugging Face/sleightbench/SLEIGHT-Bench/attacks/plausible_naming");`);
+    "Remote/GitHub/owner/repo/attacks/plausible_naming");`);
   const parts = [...html.matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1]);
   assert.deepStrictEqual(parts, [
     "Remote",
-    "Hugging Face",
-    "sleightbench",
-    "SLEIGHT-Bench",
+    "GitHub",
+    "owner",
+    "repo",
     "attacks",
     "plausible_naming",
   ]);

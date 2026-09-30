@@ -22,13 +22,6 @@ Install the command permanently:
 uv tool install git+https://github.com/lambda-science/transcript-viewer.git
 ```
 
-Optional dependencies are available for Claude-backed features (`ai`), Parquet
-datasets (`parquet`), and shared PostgreSQL deployments (`postgres`):
-
-```sh
-uv tool install "transcript-viewer[ai,parquet] @ git+https://github.com/lambda-science/transcript-viewer.git"
-```
-
 Update an existing installation with `uv tool install --force` followed by the
 same Git requirement.
 
@@ -42,20 +35,14 @@ transcript-viewer --port 8080 --no-open
 transcript-viewer sync s3://bucket/runs   # take what is new from S3
 ```
 
-The viewer opens empty on a first run. Use the Local refresh control to find
-local transcripts, or **Add…** to import files, folders, archives, GitHub or
-Hugging Face repositories, and S3 locations. Remote repositories use a picker
-that browses one level at a time and shows the measured download size before
-fetching. The library groups sessions under derived Local and Remote folders;
-**Clear library** removes the index without deleting source files.
+The viewer opens empty on a first run. Use **Add…** to import files, folders,
+archives, GitHub repositories, and S3 locations. Remote repositories use a
+picker that browses one level at a time and shows the measured download size
+before fetching. The library groups sessions under derived Local and Remote
+folders; **Clear library** removes the index without deleting source files.
 
 The interface includes search and filters, Markdown rendering, tool-call and
-subagent views, themes, tags, favourites, and optional Claude explanations.
-AI support requires the `ai` extra and `ANTHROPIC_API_KEY` (or a key saved in
-Settings). Ask responses report whether they read all steps and provide links into the transcript.
-Cached call summaries reopen with no button to press; each short call summary
-skips thinking, while longer requests show `Thinking…` and stream as
-newline-delimited JSON without replaying history quadratically.
+subagent views, themes, tags, and favourites.
 
 ## Privacy and storage
 
@@ -66,8 +53,8 @@ are stored in `~/.transcript-viewer/config.json` inside a `0700` directory with
 
 URL imports reject loopback, private, link-local, and reserved addresses,
 including after redirects. S3 access uses the installed `aws` CLI and its
-existing credentials. In a shared deployment, the identity header is trusted only because it is named here,
-in `deploy.toml`; do not expose the server around the
+existing credentials. In a shared deployment, the identity header is trusted
+only because it is named in `deploy.toml`; do not expose the server around the
 authenticating proxy.
 
 ## Development
@@ -78,7 +65,6 @@ Without that sibling checkout, ignore the local source override:
 ```sh
 uv sync --no-sources
 uv run --no-sources pytest
-uv run --no-sources --extra ai pytest  # include the optional AI paths
 ```
 
 The page is re-read whenever it changes, at the cost of one stat per page load;
@@ -88,7 +74,6 @@ Core files:
 
 ```text
 src/transcript_viewer/
-  ai.py
   cache.py
   cli.py
   config.py

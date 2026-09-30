@@ -964,162 +964,6 @@
     color: var(--bg);
   }
 
-  /* Claude-backed explanations, offered only when configured */
-  .aibtn {
-    margin-top: 8px;
-    border: 1px solid var(--line);
-    background: var(--surface);
-    color: var(--muted);
-    border-radius: 20px;
-    padding: 3px 11px;
-    font: 500 10.5px var(--font-mono);
-    letter-spacing: 0.05em;
-    cursor: pointer;
-  }
-  .aibtn:hover {
-    color: var(--accent);
-    border-color: var(--accent);
-  }
-  .aiout {
-    margin-top: 8px;
-    border-left: 2px solid var(--accent);
-    background: var(--soft);
-    border-radius: 0 7px 7px 0;
-    padding: 8px 12px;
-    font-size: 13px;
-  }
-  .aiout.busy {
-    color: var(--muted);
-    border-left-color: var(--line);
-    background: transparent;
-  }
-  .aiout.bad {
-    border-left-color: var(--danger);
-    color: var(--danger);
-    background: transparent;
-  }
-  .ail {
-    display: block;
-    font: 600 9px var(--font-mono);
-    letter-spacing: 0.11em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 3px;
-  }
-  .ask {
-    margin-bottom: 16px;
-    border: 1px solid var(--line);
-    border-radius: 9px;
-    background: var(--panel);
-    overflow: hidden;
-  }
-  .ask > summary {
-    list-style: none;
-    cursor: pointer;
-    padding: 8px 13px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .ask > summary::-webkit-details-marker {
-    display: none;
-  }
-  .ask > summary::before {
-    content: "▸";
-    color: var(--muted);
-    font-size: 10px;
-    transition: transform 0.12s;
-  }
-  .ask[open] > summary::before {
-    transform: rotate(90deg);
-  }
-  .askt {
-    font: 600 11px var(--font-mono);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .ask > summary:hover .askt {
-    color: var(--ink);
-  }
-  .askbody {
-    padding: 0 13px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 9px;
-  }
-  .turns {
-    display: flex;
-    flex-direction: column;
-    gap: 11px;
-  }
-  .turns:empty {
-    display: none;
-  }
-  .askq {
-    font-weight: 600;
-    font-size: 13.5px;
-    margin-bottom: 5px;
-  }
-  .askq::before {
-    content: "›";
-    color: var(--accent);
-    margin-right: 6px;
-  }
-  .askin {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1px solid var(--line);
-    border-radius: 9px;
-    background: var(--surface);
-    color: var(--ink);
-    font: inherit;
-    font-size: 13.5px;
-  }
-  .askin:focus {
-    outline: 2px solid var(--accent);
-    outline-offset: -1px;
-  }
-  .askout {
-    border-left: 2px solid var(--accent);
-    padding: 2px 0 2px 12px;
-    font-size: 13.5px;
-  }
-  .askout.bad {
-    border-left-color: var(--danger);
-    color: var(--danger);
-  }
-  .askout.busy::after,
-  .aiout.streaming::after {
-    content: "";
-    display: inline-block;
-    width: 6px;
-    height: 13px;
-    margin-left: 2px;
-    background: var(--accent);
-    vertical-align: text-bottom;
-    animation: blink 1s steps(2) infinite;
-  }
-  @keyframes blink {
-    50% {
-      opacity: 0;
-    }
-  }
-  .askref {
-    margin-top: 7px;
-    font: 500 10px var(--font-mono);
-    letter-spacing: 0.05em;
-    color: var(--muted);
-  }
-  .stepref {
-    color: var(--accent);
-    cursor: pointer;
-    border-bottom: 1px solid transparent;
-  }
-  .stepref:hover {
-    border-bottom-color: var(--accent);
-  }
-
   /* tabs */
   .tabs {
     display: flex;
@@ -2772,9 +2616,8 @@
     <section class="way">
       <h3>From a URL</h3>
       <p class="fine">
-        A <b>Hugging Face</b> dataset, a <b>GitHub</b> repository — whole, or
-        one folder inside it — an <b>S3</b> bucket or prefix, or a direct link
-        to a single file.
+        A <b>GitHub</b> repository — whole, or one folder inside it — an
+        <b>S3</b> bucket or prefix, or a direct link to a single file.
       </p>
       <p class="fine">
         S3 is read by running the <code>aws</code> CLI, so sign in with
@@ -2787,7 +2630,7 @@
         id="urlin"
         spellcheck="false"
         autocomplete="off"
-        placeholder="https://huggingface.co/… · https://github.com/… · s3://bucket/prefix"
+        placeholder="https://github.com/… · s3://bucket/prefix"
         onkeydown="if (event.key === 'Enter') planUrl();"
       />
       <div id="urlbar" hidden><div id="urlfill"></div></div>
@@ -3382,8 +3225,7 @@
                 ? view.output(r.content, c.arguments || {})
                 : pre(r.content)
           }</div>`
-        : "") +
-      (AI.available ? callSummary(c.tool_call_id) : "")
+        : "")
     );
   }
 
@@ -3501,10 +3343,8 @@
   let INDEX = [],
     GROUPS = [],
     TAGS = [],
-    AI = {},
+    SETTINGS = {},
     DOWNLOADS = "",
-    CHAT = [],
-    ASK_OPEN = false,
     cur = null,
     traj = null,
     collection = "__all",
@@ -3528,6 +3368,8 @@
     extra = null,
     RENAMING = false,
     OPEN_ALL = false;
+  const nextFrame =
+    globalThis.requestAnimationFrame || ((f) => setTimeout(f, 16));
 
   function reveal(a) {
     fetch(a.getAttribute("href")).then((r) => {
@@ -3567,7 +3409,7 @@
     INDEX = fresh.sessions || [];
     GROUPS = fresh.groups || [];
     TAGS = fresh.tags || [];
-    AI = fresh.ai || {};
+    SETTINGS = fresh.settings || {};
     DOWNLOADS = fresh.downloads || DOWNLOADS;
     showCount();
     drawList();
@@ -3754,7 +3596,7 @@
       INDEX = d.sessions || [];
       GROUPS = d.groups || [];
       TAGS = d.tags || [];
-      AI = d.ai || {};
+      SETTINGS = d.settings || {};
       DOWNLOADS = d.downloads || DOWNLOADS;
       bootSay(`Drawing ${num(INDEX.length)} sessions…`, 0, 0);
       // Let that line paint before the work that blocks the thread.
@@ -3899,13 +3741,10 @@
               : ""
           }
           ${
-            r.path === "Local"
-              ? `<button title="Look on this machine again"
-            onclick="event.stopPropagation();scanMachine()">⟳</button>`
-              : r.source
-                ? `<button title="Fetch this folder again"
+            r.source
+              ? `<button title="Fetch this folder again"
             onclick="event.stopPropagation();refreshGroup('${esc(r.path)}')">⟳</button>`
-                : ""
+              : ""
           }
           <button title="Remove these sessions from the library" class="dang"
             onclick="event.stopPropagation();dropGroup('${esc(r.path)}')">✕</button>
@@ -3941,7 +3780,7 @@
             ? `, except ${num(owned)} copy${owned === 1 ? "" : "ies"} the viewer made itself, ` +
               `which will be deleted.`
             : ".") +
-          `\n\nTitles, tags, stars and any cached AI summaries go with them.`,
+          `\n\nTitles, tags and stars go with them.`,
       )
     )
       return;
@@ -4138,10 +3977,8 @@
     if (!INDEX.length && !q.value) {
       main.innerHTML = `<div class="blank">
       <h2>Nothing here yet</h2>
-      <p>Look for sessions this machine has already written, or add transcripts
-         from a file or a URL.</p>
-      <button class="primary" onclick="scanMachine()">Look on this machine</button>
-      <button onclick="openAdd()">Add…</button>
+      <p>Add transcripts from a file, folder, archive, or URL.</p>
+      <button class="primary" onclick="openAdd()">Add…</button>
     </div>`;
       return;
     }
@@ -4241,7 +4078,7 @@
   function drawSecrets() {
     const host = document.getElementById("secrets");
     if (!host) return;
-    const all = AI.secrets || {};
+    const all = SETTINGS.secrets || {};
     host.innerHTML =
       Object.keys(all)
         .map((name) => {
@@ -4271,8 +4108,8 @@
    is nothing to disambiguate, and the CLI is asked for the list rather than the
    reader. */
   function awsField() {
-    const known = AI.aws_profiles || [];
-    const chosen = AI.aws_profile || "";
+    const known = SETTINGS.aws_profiles || [];
+    const chosen = SETTINGS.aws_profile || "";
     const choice =
       known.length > 1
         ? `<select id="awsprofile" onchange="saveProfile()">
@@ -4311,7 +4148,7 @@
     const err = document.getElementById("keyerr");
     err.hidden = true;
     try {
-      AI = await postJSON("/api/settings", body);
+      SETTINGS = await postJSON("/api/settings", body);
       drawSecrets();
       render();
     } catch (e) {
@@ -4330,35 +4167,8 @@
    files, and nobody should find that out by pressing a button once. */
   let PLANNED = null;
 
-  /* Places that really do hold transcripts, checked rather than guessed: each was
-   fetched and converted before it was listed. Gated ones are marked, since a
-   token you have not accepted terms for fails at the door rather than here. */
+  /* Places that really do hold transcripts, checked rather than guessed. */
   const EXAMPLES = [
-    {
-      name: "ATBench",
-      url: "https://huggingface.co/datasets/AI45Research/ATBench/tree/main/ATBench",
-      note: "1,000 labelled agent trajectories",
-    },
-    {
-      name: "ATBench-500",
-      url: "https://huggingface.co/datasets/AI45Research/ATBench/tree/main/ATBench500",
-      note: "the smaller config, 500 trajectories",
-    },
-    {
-      name: "SLEIGHT-Bench",
-      url: "https://huggingface.co/datasets/sleightbench/SLEIGHT-Bench/tree/main/attacks",
-      note: "gated — accept the terms on Hugging Face first",
-    },
-    {
-      name: "METR MALT",
-      url: "https://huggingface.co/datasets/metr-evals/malt-transcripts-public/tree/main/data",
-      note: "gated — accept the terms first; shards are large, so pick one",
-    },
-    {
-      name: "METR MALT (vague CoT)",
-      url: "https://huggingface.co/datasets/metr-evals/malt-transcripts-public/tree/main/vague_cot",
-      note: "the same runs with the chain of thought made vaguer",
-    },
     {
       name: "Redwood agent transcripts",
       url: "s3://rr-agent-transcripts",
@@ -4368,11 +4178,6 @@
       name: "Redwood Screwtape transcripts",
       url: "s3://rr-strajs",
       note: "136 transcripts, honest and attack in pairs — needs an AWS profile",
-    },
-    {
-      name: "MonitoringBench",
-      url: "https://huggingface.co/datasets/neur26anonsub/ctrldataset2026",
-      note: "2,644 attack runs as Inspect logs — the archive alone is 2.5 GB",
     },
   ];
 
@@ -4621,26 +4426,6 @@
     setUrlState("Nothing downloads until you have seen what is there.", "Look");
   }
 
-  /* Looking on this machine is a deliberate act: it indexes every agent session
-   here, which is not a thing to do because a library happens to be empty. It
-   lives on the Local folder as a refresh, beside the one remote folders get. */
-  async function scanMachine() {
-    const before = INDEX.length;
-    note("Looking on this machine…");
-    try {
-      await postJSON("/api/scan", {});
-      await refreshIndex();
-      if (!cur) showLibrary();
-      const added = INDEX.length - before;
-      note(
-        added
-          ? `${num(added)} new session${added === 1 ? "" : "s"}.`
-          : "Nothing new here.",
-      );
-    } catch (e) {
-      note(e.message);
-    }
-  }
   const closeUrl = () => {
     urlmodal.hidden = true;
     PLANNED = null;
@@ -4777,11 +4562,7 @@
     return data;
   }
 
-  /* Read a streamed NDJSON response, calling back on every frame. Text arrives
-   in pieces so an answer can be watched being written rather than waited for. */
-  const streamClaude = (body, onFrame) =>
-    streamJSON("/api/ai", { key: cur, ...body }, onFrame);
-
+  /* Read a streamed NDJSON response, calling back on every frame. */
   async function streamJSON(url, body, onFrame) {
     const res = await fetch(url, {
       method: "POST",
@@ -4812,134 +4593,6 @@
     take(buffer);
   }
 
-  const summaries = () =>
-    (INDEX.find((e) => e.key === cur) || {}).summaries || {};
-
-  /* A summary already paid for is simply shown — there is nothing left to
-   explain, and making someone press a button to reveal text they already own
-   is a click that buys nothing. Only a call without one offers the button. */
-  function callSummary(id) {
-    const cached = (summaries()[id] || "").trim();
-    if (!cached)
-      return `<button class="aibtn" onclick="explainCall(event,'${id}')"
-      title="Send this one call to Claude and explain it">explain this call</button>
-    <div class="aiout" id="ai-${id}" hidden></div>`;
-    return `<div class="aiout" id="ai-${id}"><span class="ail">summary</span>${md(cached)}</div>`;
-  }
-
-  async function explainCall(event, callId) {
-    event.preventDefault();
-    event.stopPropagation();
-    const box = document.getElementById("ai-" + callId);
-    if (!box) return;
-    box.hidden = false;
-    box.className = "aiout busy";
-    box.textContent = "Reading the call and response…";
-    let text = "";
-    try {
-      await streamClaude({ what: "call", call_id: callId }, (frame) => {
-        if (frame.t !== "delta") return;
-        text += frame.text;
-        box.className = "aiout streaming";
-        // Rendered on every frame so partial markdown still reads as prose.
-        box.innerHTML = `<span class="ail">summary</span>${md(text)}`;
-      });
-      box.className = "aiout";
-      box.innerHTML = `<span class="ail">summary</span>${md(text)}`;
-      // Remember it locally too, so a re-render shows it without asking again.
-      const rec = INDEX.find((e) => e.key === cur);
-      if (rec && text.trim())
-        rec.summaries = { ...(rec.summaries || {}), [callId]: text.trim() };
-    } catch (err) {
-      box.className = "aiout bad";
-      box.textContent = err.message;
-    }
-  }
-
-  async function askSession(event) {
-    if (event.key !== "Enter") return;
-    const box = event.target,
-      question = box.value.trim();
-    if (!question || CHAT.some((t) => t.busy)) return;
-    box.value = "";
-
-    // Prior turns go up as context; the steps sent with them do not, since the
-    // answers already carry what mattered.
-    const history = CHAT.filter((t) => t.a && !t.error).map((t) => ({
-      q: t.q,
-      a: t.a,
-    }));
-    // What the last answer read. A follow-up with nothing to match on — "why?" —
-    // is almost always about those steps rather than an arbitrary slice.
-    const previous = CHAT.filter((t) => t.steps && t.steps.length).pop();
-    const focus = previous ? previous.steps : [];
-    const turn = { q: question, a: "", steps: [], busy: true, thinking: false };
-    CHAT.push(turn);
-    paintTurns();
-
-    try {
-      await streamClaude({ what: "ask", question, history, focus }, (frame) => {
-        if (frame.t === "steps") {
-          turn.steps = frame.steps;
-          turn.total = frame.total;
-        } else if (frame.t === "thinking") turn.thinking = true;
-        else if (frame.t === "delta") {
-          turn.a += frame.text;
-          turn.thinking = false;
-        }
-        paintTurns();
-      });
-    } catch (err) {
-      turn.error = err.message;
-    }
-    turn.busy = false;
-    paintTurns();
-    const again = document.querySelector(".askin");
-    if (again) again.focus();
-  }
-
-  /* Repaint only the conversation. A full render() would rebuild the question
-   field and steal focus on every token; the input deliberately sits outside
-   the repainted region.
-
-   While text is streaming, only the last turn changes, so only that node is
-   written — replacing the whole conversation would make the browser reparse
-   every earlier answer on every token. Repaints are coalesced to one per
-   animation frame, since tokens arrive faster than a screen refreshes. */
-  const nextFrame =
-    globalThis.requestAnimationFrame || ((f) => setTimeout(f, 16));
-  let PAINTING = false;
-
-  function paintTurns() {
-    if (PAINTING) return;
-    PAINTING = true;
-    nextFrame(() => {
-      PAINTING = false;
-      drawTurns();
-    });
-  }
-
-  function drawTurns() {
-    const host = document.querySelector(".turns");
-    if (!host) {
-      render();
-      return;
-    }
-    const nodes = host.querySelectorAll(".turn");
-    const live = CHAT[CHAT.length - 1];
-    if (nodes.length === CHAT.length && live) {
-      const body = nodes[nodes.length - 1].querySelector(".askout");
-      if (body) {
-        body.className = turnClass(live);
-        body.innerHTML = turnBody(live);
-        return;
-      }
-    }
-    host.innerHTML = turnsHTML();
-    const last = host.querySelector(".turn:last-child");
-    if (last && CHAT.length > 1) last.scrollIntoView({ block: "nearest" });
-  }
-
   async function annotate(key, fields) {
     try {
       await postJSON("/api/library", { key, ...fields });
@@ -4955,7 +4608,7 @@
     INDEX = d.sessions || [];
     GROUPS = d.groups || [];
     TAGS = d.tags || [];
-    AI = d.ai || {};
+    SETTINGS = d.settings || {};
     DOWNLOADS = d.downloads || DOWNLOADS;
     showCount();
     drawList();
@@ -6832,7 +6485,6 @@
       </div>
       ${details(t, e)}
     </div>
-    ${AI.available ? aiStrip() : ""}
     ${drawLanes(t)}
     <div class="filters">
       ${
@@ -6875,87 +6527,6 @@
         ${loose.map((sub) => branch({ trajectory_id: sub.trajectory_id }, t, 0)).join("")}</div>`
         : "";
     })()}`;
-  }
-
-  function aiStrip() {
-    return `<details class="ask"${ASK_OPEN ? " open" : ""} ontoggle="ASK_OPEN=this.open">
-    <summary><span class="askt">Ask Claude</span></summary>
-    ${askInner()}
-  </details>`;
-  }
-
-  /* Ask a question about this transcript. Nothing is sent until Enter. */
-  function askInner() {
-    return `<div class="askbody">
-    <div class="turns">${turnsHTML()}</div>
-    <input class="askin" spellcheck="false" onkeydown="askSession(event)"
-      placeholder="${CHAT.length ? "Ask a follow-up…" : "Ask about this transcript…"}">
-  </div>`;
-  }
-
-  /* What the answer was allowed to see. The bare count was misleading: nearly
-   every question hits the same ceiling, so the number described the cap rather
-   than the transcript. Against the total it says something real — whether the
-   answer read everything or a sliver. */
-  function coverage(turn) {
-    const seen = turn.steps.length,
-      total = turn.total || 0;
-    if (!seen) return "";
-    const what =
-      total && seen < total
-        ? `read ${num(seen)} of ${num(total)} steps`
-        : `read all ${num(seen)} step${seen === 1 ? "" : "s"}`;
-    return `<div class="askref">${what}</div>`;
-  }
-
-  /* Turn "(step 42)" in an answer into a link to that step. The model is asked to
-   cite, so these are the references worth following; code is skipped, where a
-   number is likelier to be data than a citation. */
-  function linkSteps(html) {
-    return html
-      .split(/(<pre[\s\S]*?<\/pre>|<code>[\s\S]*?<\/code>)/)
-      .map((part, i) =>
-        i % 2
-          ? part
-          : part.replace(
-              /\bsteps?\s+\d+(?:\s*(?:,|and|&amp;|–|-)\s*\d+)*/gi,
-              (m) =>
-                m.replace(
-                  /\d+/g,
-                  (n) =>
-                    `<span class="stepref" onclick="jumpToStep(${n})">${n}</span>`,
-                ),
-            ),
-      )
-      .join("");
-  }
-
-  function jumpToStep(id) {
-    const pos = ((traj || {}).steps || []).findIndex((s) => s.step_id === id);
-    if (pos < 0) return;
-    jump(pos, id);
-  }
-
-  function turnBody(t) {
-    return t.error
-      ? esc(t.error)
-      : t.thinking && !t.a
-        ? "Thinking…"
-        : t.busy && !t.a
-          ? "Reading the steps…"
-          : `${linkSteps(md(t.a))}${coverage(t)}`;
-  }
-
-  const turnClass = (t) =>
-    `askout${t.error ? " bad" : ""}${t.busy && !t.a ? " busy" : ""}`;
-
-  function turnsHTML() {
-    return CHAT.map(
-      (t) => `<div class="turn">
-      <div class="askq">${esc(t.q)}</div>
-      <div class="${turnClass(t)}">${turnBody(t)}</div>
-    </div>`,
-    ).join("");
   }
 
   /* Provenance: what this trajectory is and where it came from. */

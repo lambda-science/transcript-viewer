@@ -42,20 +42,6 @@ class Secret:
 
 
 SECRETS: dict[str, Secret] = {
-    "anthropic": Secret(
-        "anthropic",
-        "Anthropic API key",
-        "api_key",
-        ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
-        "sk-ant-…",
-    ),
-    "hf": Secret(
-        "hf",
-        "Hugging Face token",
-        "hf_token",
-        ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"),
-        "hf_…",
-    ),
     "github": Secret(
         "github",
         "GitHub token",
@@ -186,14 +172,7 @@ def state(path: Path | None = None) -> dict[str, dict[str, str]]:
 def tokens(path: Path | None = None) -> dict[str, str | None]:
     """The fetch credentials, by service name."""
     return {
-        "hf": secret("hf", path),
         "github": secret("github", path),
         # Not a credential: the aws CLI resolves the session from this name.
         "aws": aws_profile(path),
     }
-
-
-# The Anthropic key predates the others and is referenced by name elsewhere.
-def api_key(path: Path | None = None) -> str | None:
-    """The Anthropic key, from settings or the environment."""
-    return secret("anthropic", path)

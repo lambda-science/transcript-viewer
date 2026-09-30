@@ -1,4 +1,4 @@
-"""Pull trajectories from Hugging Face and GitHub by URL.
+"""Pull trajectories from GitHub and direct URLs.
 
 Two rules shape this module.
 
@@ -9,8 +9,8 @@ allowed, but the host is resolved first and refused if it lands on a loopback,
 link-local, private or otherwise reserved address — checked again after
 redirects, since a redirect is a second request to a second host.
 
-Hugging Face and GitHub are understood well enough to list a repository; every
-other host is treated as a direct link to one file.
+GitHub is understood well enough to list a repository; every other host is
+treated as a direct link to one file.
 
 **S3 goes through the aws CLI.** `s3://bucket/prefix` is listed and downloaded
 by running `aws`, never by holding a credential here: the CLI already owns the
@@ -47,8 +47,6 @@ from urllib.parse import quote, urlparse
 # Hosts whose layout is understood well enough to list a repository. Anything
 # else is fetched as a single file.
 HOSTS = {
-    "huggingface.co": "hf",
-    "cdn-lfs.huggingface.co": "hf",
     "github.com": "github",
     "api.github.com": "github",
     "raw.githubusercontent.com": "github",
@@ -60,11 +58,9 @@ HOSTS = {
 # the case it was added for.
 # A transcript is not always JSON: some corpora ship the readable rendering.
 LOGS = (".jsonl", ".json", ".har", ".md", ".markdown")
-# A published dataset is a container of runs rather than a log, but it is still
-# a thing worth fetching: METR's transcripts come as Parquet shards.
 # An Inspect .eval is a zip of JSON, and a corpus of them is where most
 # control research keeps its transcripts.
-DATASETS = (".parquet", ".eval")
+DATASETS = (".eval",)
 ARCHIVES = (".zip", ".tgz", ".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".gz")
 SUFFIXES = LOGS + DATASETS + ARCHIVES
 
@@ -187,11 +183,14 @@ def _open(url: str, token: str | None, service: str) -> Any:
         response = urllib.request.urlopen(request, timeout=TIMEOUT)
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
-            where = "Hugging Face" if service == "hf" else "GitHub"
+            where = "GitHub" if service == "github" else urlparse(url).netloc
+            advice = (
+                " Add a token in Settings if the repository is private."
+                if service == "github"
+                else ""
+            )
             raise FetchError(
-                f"{where} refused that ({exc.code}). "
-                f"A gated dataset needs a token in Settings, and its conditions "
-                f"accepted on its page first."
+                f"{where} refused that ({exc.code}).{advice}"
             ) from exc
         if exc.code == 404:
             raise FetchError("Nothing there — check the URL.") from exc
@@ -327,50 +326,6 @@ def _s3_download(remote: Remote, target: Path, profile: str) -> None:
     )
 
 
-# ------------------------------------------------------------- hugging face ---
-
-_HF = re.compile(
-    r"^/(?:(?P<kind>datasets|spaces)/)?(?P<repo>[^/]+/[^/]+)"
-    r"(?:/(?P<action>tree|blob|resolve)/(?P<rev>[^/]+)(?P<path>/.*)?)?/?$"
-)
-
-
-def _hf_plan(url: str, token: str | None) -> tuple[str, list[Remote], str]:
-    parsed = urlparse(url)
-    match = _HF.match(parsed.path)
-    if not match:
-        raise FetchError("That does not look like a Hugging Face repo or file URL.")
-
-    repo = match.group("repo")
-    kind = match.group("kind") or "models"
-    rev = match.group("rev") or "main"
-    inner = (match.group("path") or "").strip("/")
-    api_kind = {"datasets": "datasets", "spaces": "spaces", "models": "models"}[kind]
-    prefix = f"{kind}/" if match.group("kind") else ""
-
-    def raw(path: str) -> str:
-        return f"https://huggingface.co/{prefix}{repo}/resolve/{rev}/{quote(path)}"
-
-    web = f"https://huggingface.co/{prefix}{repo}/tree/{rev}"
-    if match.group("action") == "blob" or (inner and inner.endswith(SUFFIXES)):
-        return repo.replace("/", "--"), [
-            Remote(name=inner.split("/")[-1], url=raw(inner))
-        ], web
-
-    listing = _json(
-        f"https://huggingface.co/api/{api_kind}/{repo}/tree/{rev}/{quote(inner)}"
-        f"?recursive=true",
-        token,
-        "hf",
-    )
-    files = [
-        Remote(name=row["path"], url=raw(row["path"]), size=row.get("size"))
-        for row in listing
-        if row.get("type") == "file" and str(row.get("path", "")).endswith(SUFFIXES)
-    ]
-    return repo.replace("/", "--"), files, web
-
-
 # ------------------------------------------------------------------ github ---
 
 _GH = re.compile(
@@ -444,8 +399,6 @@ def browse(url: str, inside: str, tokens: dict[str, str | None]) -> list[Node]:
         return _s3_browse(url, inside, resolve_profile(tokens.get("aws") or ""))
 
     service = _check_host(url)
-    if service == "hf":
-        return _hf_browse(url, inside, tokens.get("hf"))
     if service == "github":
         return _github_browse(url, inside, tokens.get("github"))
     raise FetchError("That is a single file, so there is nothing to look inside.")
@@ -487,26 +440,6 @@ def _s3_browse(url: str, inside: str, profile: str) -> list[Node]:
         if row["Key"] != prefix and str(row.get("Key", "")).endswith(SUFFIXES)
     ]
     return nodes
-
-
-def _hf_browse(url: str, inside: str, token: str | None) -> list[Node]:
-    parsed = urlparse(url)
-    match = _HF.match(parsed.path)
-    if not match:
-        raise FetchError("That does not look like a Hugging Face repo URL.")
-    repo = match.group("repo")
-    kind = match.group("kind") or "models"
-    rev = match.group("rev") or "main"
-    base = (match.group("path") or "").strip("/")
-    where = "/".join(p for p in (base, inside) if p)
-
-    rows = _json(
-        f"https://huggingface.co/api/{kind if match.group('kind') else 'models'}"
-        f"/{repo}/tree/{rev}/{quote(where)}",
-        token,
-        "hf",
-    )
-    return _level(rows, "type", "directory", "path", where, inside, "size")
 
 
 def _github_browse(url: str, inside: str, token: str | None) -> list[Node]:
@@ -618,8 +551,7 @@ def _inner_base(url: str) -> str:
     if url.startswith("s3://"):
         return ""
     parsed = urlparse(url)
-    pattern = _HF if HOSTS.get(parsed.netloc) == "hf" else _GH
-    match = pattern.match(parsed.path)
+    match = _GH.match(parsed.path)
     return (match.group("path") or "").strip("/") if match else ""
 
 
@@ -753,7 +685,7 @@ def plan(url: str, tokens: dict[str, str | None], sized: bool = True) -> Plan:
             Remote(name=name, url=url)
         ], ""
     else:
-        label, files, web = (_hf_plan if service == "hf" else _github_plan)(url, token)
+        label, files, web = _github_plan(url, token)
     made = Plan(service, label, files, web)
     return _sized(made) if sized else made
 

@@ -34,7 +34,6 @@ def test_a_copy_that_is_told_nothing_is_the_tool_it_always_was(tmp_path):
     assert site.shared is False
     assert site.database == ""
     assert site.secrets == "user"
-    assert site.scan_roots == ()
 
 
 def test_every_setting_has_somewhere_to_be_written(written):
@@ -55,8 +54,6 @@ def test_the_file_is_read(written):
             header = "x-amzn-oidc-identity"
             admins = ["ann@example.com", "bo@example.com"]
 
-            [scan]
-            roots = ["/data/transcripts"]
             """
         ),
         environ={},
@@ -65,7 +62,6 @@ def test_the_file_is_read(written):
     assert site.host == "0.0.0.0"
     assert site.identity_header == "x-amzn-oidc-identity"
     assert site.admins == ("ann@example.com", "bo@example.com")
-    assert site.scan_roots == ("/data/transcripts",)
     assert site.name == "Redwood Transcripts"
     assert site.shared is True
 
@@ -102,34 +98,3 @@ def test_what_is_current_can_be_replaced_and_put_back():
         assert deploy.current().name == "Somewhere else"
     finally:
         deploy.use(None)
-
-
-def test_a_deployment_can_refuse_to_send_transcripts_anywhere(written):
-    """The transcripts in a deployment are not always the operator's to send.
-
-    A run classified above the lowest level is still classified once it has
-    been summarised, and the summarising is an egress to a third party. The
-    per-transcript switch that used to cover this was removed as redundant when
-    the only data in question was the operator's own.
-    """
-    assert deploy.read(written(""), environ={}).ai == "on"
-
-    off = deploy.read(written("[ai]\nenabled = \"off\"\n"), environ={})
-    assert off.ai == "off"
-
-
-def test_turning_the_model_off_beats_any_key(written, monkeypatch):
-    """No key, typed or configured, brings it back — and the refusal says so
-    rather than reading like a missing dependency, which would invite someone
-    to go and install one."""
-    from transcript_viewer import ai
-
-    try:
-        deploy.use(deploy.Deployment(ai="off"))
-        monkeypatch.setattr(ai, "_client", lambda: object())
-        ok, why = ai.status()
-    finally:
-        deploy.use(None)
-
-    assert ok is False
-    assert "does not send" in why

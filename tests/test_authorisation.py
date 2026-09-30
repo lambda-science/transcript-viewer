@@ -66,7 +66,6 @@ def test_the_dangerous_routes_are_the_ones_marked_dangerous():
     edit to this list rather than a number going down."""
     for route in [
         ("POST", "/api/settings"),
-        ("POST", "/api/scan"),
         ("POST", "/api/fetch"),
         ("POST", "/api/refetch"),
         ("DELETE", "/api/library"),
@@ -151,16 +150,14 @@ def test_a_shared_server_stops_saying_what_it_is_holding():
     on every page load."""
     try:
         deploy.use(SHARED)
-        shared = viewer._ai_state()
+        shared = viewer._settings_state()
         deploy.use(deploy.Deployment())
-        local = viewer._ai_state()
+        local = viewer._settings_state()
     finally:
         deploy.use(None)
 
-    assert shared["aws_profiles"] == [] and shared["hint"] == ""
+    assert shared["aws_profiles"] == []
     assert shared["secrets"] == {} and shared["managed"] is True
-    # The page still learns whether the feature works at all.
-    assert "available" in shared
     assert local["managed"] is False
 
 
@@ -174,13 +171,13 @@ def test_the_operators_key_is_not_outranked_by_one_left_in_the_file(tmp_path, mo
     from transcript_viewer import config
 
     settings = tmp_path / "config.json"
-    settings.write_text('{"api_key": "sk-ant-typed-in-here-long-enough"}')
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-from-the-operator")
+    settings.write_text('{"github_token": "ghp_typed_in_here_long_enough"}')
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_from_the_operator_long_enough")
 
     try:
         deploy.use(deploy.Deployment())
-        assert config.secret("anthropic", settings) == "sk-ant-typed-in-here-long-enough"
+        assert config.secret("github", settings) == "ghp_typed_in_here_long_enough"
         deploy.use(deploy.Deployment(secrets="server"))
-        assert config.secret("anthropic", settings) == "sk-ant-from-the-operator"
+        assert config.secret("github", settings) == "ghp_from_the_operator_long_enough"
     finally:
         deploy.use(None)

@@ -423,8 +423,7 @@ def test_an_opened_archive_is_unpacked_rather_than_stored_whole(server, tmp_path
     assert not any(n.endswith(".zip") for n in stored)
 
 
-def test_an_opened_file_survives_a_rescan_of_the_default_roots(server, tmp_path):
-    """A rescan replaces the index; anything brought in by hand must persist."""
+def test_an_opened_file_is_classified_from_its_location(server, tmp_path):
     from transcript_viewer import corpus
 
     payload = LOG.replace('"session_id": "c"', '"session_id": "persist"').encode()
@@ -495,7 +494,7 @@ def test_deleting_the_last_file_clears_the_whole_store_directory(server, tmp_pat
     assert not stored.parent.exists(), "the empty store directory was left behind"
 
 
-# ---- settings and the AI gate -------------------------------------------------
+# ---- settings -----------------------------------------------------------------
 
 
 def _try_post(url: str, body: dict) -> tuple[int, dict]:
@@ -506,232 +505,35 @@ def _try_post(url: str, body: dict) -> tuple[int, dict]:
         return exc.code, json.loads(exc.read())
 
 
-def _raise_unavailable():
-    from transcript_viewer import ai
-
-    raise ai.Unavailable("none here")
-
-
-@pytest.fixture
-def credentialed(monkeypatch):
-    """Pretend a credential is configured, without one being present."""
-    from transcript_viewer import ai
-
-    monkeypatch.setattr(ai, "_client", lambda: object())
-    return ai
-
-
-def test_a_saved_key_with_no_sdk_says_which_piece_is_missing(server, monkeypatch):
-    """The failure that read as "the save didn't work": key stored, SDK absent."""
-    from transcript_viewer import ai, config
-
-    config.set_secret("anthropic", "sk-ant-api03-" + "q" * 40)
-    monkeypatch.setattr(
-        ai, "_client", lambda: (_ for _ in ()).throw(ai.Unavailable("no anthropic package"))
+def test_a_saved_key_is_never_returned_to_the_page(server):
+    secret = "g" * 40
+    status, payload = _try_post(
+        server + "/api/settings", {"name": "github", "token": secret}
     )
-    state = _index(server)["ai"]
-    assert state["available"] is False
-    assert state["source"] == "settings", "the saved key must still be reported"
-    assert state["hint"] == "…qqqq"
-    assert "no anthropic package" in state["reason"]
-
-
-def test_ai_is_off_when_nothing_is_configured(server, monkeypatch):
-    from transcript_viewer import ai, config
-
-    monkeypatch.setattr(ai, "_client", _raise_unavailable)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    assert config.stored("anthropic") is None
-    state = _index(server)["ai"]
-    assert state["available"] is False and state["hint"] == ""
-    assert state["reason"], "an unavailable state must say why"
-
-
-def test_the_ai_endpoint_refuses_without_a_credential(server, monkeypatch):
-    from transcript_viewer import ai
-
-    monkeypatch.setattr(ai, "_client", _raise_unavailable)
-    status, payload = _try_post(server + "/api/ai", {"key": _first_key(server), "what": "ask"})
-    assert status == 501
-    assert "not configured" in payload["error"]
-
-
-def test_a_saved_key_is_never_returned_to_the_page(server, credentialed):
-    secret = "sk-ant-api03-" + "z" * 40
-    status, payload = _try_post(server + "/api/settings", {"api_key": secret})
     assert status == 200
     assert secret not in json.dumps(payload)
-    assert payload["source"] == "settings" and payload["hint"] == "\u2026zzzz"
+    assert payload["secrets"]["github"]["source"] == "settings"
+    assert payload["secrets"]["github"]["hint"] == "\u2026gggg"
     assert secret not in json.dumps(_index(server))
 
 
-def test_a_key_that_is_not_one_is_refused(server, credentialed):
-    status, payload = _try_post(server + "/api/settings", {"api_key": "nope"})
+def test_a_key_that_is_not_one_is_refused(server):
+    status, payload = _try_post(
+        server + "/api/settings", {"name": "github", "token": "nope"}
+    )
     assert status == 400
     assert "does not look like" in payload["error"]
 
 
-def test_a_saved_key_can_be_removed(server, credentialed):
-    _try_post(server + "/api/settings", {"api_key": "sk-ant-api03-" + "z" * 40})
-    status, payload = _try_post(server + "/api/settings", {"clear": True})
-    assert status == 200
-    assert payload["hint"] == ""
-
-
-# ---- streaming ------------------------------------------------------------------
-
-
-def _ai_call_id(server: str) -> str:
-    """A tool call id from the streaming fixture session."""
-    key = _first_key(server)
-    traj = json.loads(_get(server + f"/api/trajectory?id={key}")[1])
-    for step in traj["steps"]:
-        for call in step.get("tool_calls") or []:
-            return call["tool_call_id"]
-    pytest.fail("fixture has no tool call")
-
-
-def _read_frames(url: str, body: dict, stop_after: int | None = None):
-    """Read NDJSON frames as they arrive, recording when each one landed."""
-    request = urllib.request.Request(
-        url, data=json.dumps(body).encode(), method="POST",
-        headers={"Content-Type": "application/json"},
+def test_a_saved_key_can_be_removed(server):
+    _try_post(
+        server + "/api/settings", {"name": "github", "token": "g" * 40}
     )
-    frames, started = [], time.monotonic()
-    with urllib.request.urlopen(request, timeout=20) as response:
-        for line in response:
-            if line.strip():
-                frames.append((time.monotonic() - started, json.loads(line)))
-                if stop_after and len(frames) >= stop_after:
-                    break
-    return frames
-
-
-def test_an_answer_arrives_in_pieces_rather_than_all_at_once(server, credentialed):
-    """The point of streaming: the first token lands long before the last."""
-    from transcript_viewer import ai
-
-    def slow(*a, **k):
-        for piece in ["one ", "two ", "three ", "four"]:
-            time.sleep(0.15)
-            yield "text", piece
-
-    ai_stream = pytest.MonkeyPatch()
-    ai_stream.setattr(ai, "_stream", slow)
-    try:
-        frames = _read_frames(
-            server + "/api/ai",
-            {"key": _first_key(server), "what": "ask", "question": "what happened"},
-        )
-    finally:
-        ai_stream.undo()
-
-    deltas = [(at, f) for at, f in frames if f["t"] == "delta"]
-    assert len(deltas) == 4, f"expected four deltas, got {[f for _, f in frames]}"
-    assert deltas[0][0] < deltas[-1][0] - 0.2, "every frame arrived at once — not streamed"
-    assert frames[0][1]["t"] == "steps", "the steps should be known before any text"
-    assert frames[-1][1]["t"] == "done"
-    assert "".join(f["text"] for _, f in deltas) == "one two three four"
-
-
-def test_a_summary_is_streamed_then_kept(server, credentialed):
-    from transcript_viewer import ai
-
-    patch = pytest.MonkeyPatch()
-    patch.setattr(
-        ai,
-        "_stream",
-        lambda *a, **k: iter([("text", "It "), ("text", "listed "), ("text", "files.")]),
-    )
-    try:
-        call_id = _ai_call_id(server)
-        frames = _read_frames(server + "/api/ai", {
-            "key": _first_key(server), "what": "call", "call_id": call_id,
-        })
-        assert [f["t"] for _, f in frames] == ["delta", "delta", "delta", "done"]
-
-        # Paid for once: the second read must not touch the model.
-        patch.setattr(ai, "_stream", _never_called)
-        again = _read_frames(server + "/api/ai", {
-            "key": _first_key(server), "what": "call", "call_id": call_id,
-        })
-    finally:
-        patch.undo()
-
-    assert "".join(f["text"] for _, f in again if f["t"] == "delta") == "It listed files."
-
-
-def _never_called(*a, **k):
-    raise AssertionError("a cached summary was regenerated")
-
-
-def test_an_unknown_call_is_refused_before_the_stream_opens(server, credentialed):
     status, payload = _try_post(
-        server + "/api/ai",
-        {"key": _first_key(server), "what": "call", "call_id": "nope"},
+        server + "/api/settings", {"name": "github", "clear": True}
     )
-    assert status == 404 and payload["error"] == "no such call"
-
-
-def test_thinking_is_signalled_but_its_content_is_not_sent(server, credentialed):
-    """The reader learns that something is happening, not what it says."""
-    from transcript_viewer import ai
-
-    patch = pytest.MonkeyPatch()
-    patch.setattr(
-        ai,
-        "_stream",
-        lambda *a, **k: iter([("thinking", "secret deliberation"), ("text", "the answer")]),
-    )
-    try:
-        frames = _read_frames(
-            server + "/api/ai",
-            {"key": _first_key(server), "what": "ask", "question": "why"},
-        )
-    finally:
-        patch.undo()
-
-    kinds = [f["t"] for _, f in frames]
-    assert kinds == ["steps", "thinking", "delta", "done"]
-    assert "secret deliberation" not in json.dumps([f for _, f in frames])
-
-
-def test_a_follow_up_question_carries_the_earlier_turn(server, credentialed):
-    from transcript_viewer import ai
-
-    seen = {}
-
-    def capture(client, system, messages, max_tokens, thinking=True):
-        seen["messages"] = messages
-        return iter([("text", "second")])
-
-    patch = pytest.MonkeyPatch()
-    patch.setattr(ai, "_stream", capture)
-    try:
-        _read_frames(server + "/api/ai", {
-            "key": _first_key(server), "what": "ask", "question": "and then?",
-            "history": [{"q": "what happened", "a": "it ran ls"}],
-        })
-    finally:
-        patch.undo()
-
-    assert [m["role"] for m in seen["messages"]] == ["user", "assistant", "user"]
-    assert seen["messages"][1]["content"] == "it ran ls"
-
-
-def test_a_malformed_history_is_ignored_rather_than_crashing(server, credentialed):
-    from transcript_viewer import ai
-
-    patch = pytest.MonkeyPatch()
-    patch.setattr(ai, "_stream", lambda *a, **k: iter([("text", "fine")]))
-    try:
-        frames = _read_frames(server + "/api/ai", {
-            "key": _first_key(server), "what": "ask", "question": "q",
-            "history": "not a list",
-        })
-    finally:
-        patch.undo()
-    assert frames[-1][1]["t"] == "done"
+    assert status == 200
+    assert payload["secrets"]["github"]["hint"] == ""
 
 
 def test_a_session_whose_file_is_gone_is_not_listed(server, tmp_path):
@@ -776,7 +578,7 @@ def _delete(url: str) -> tuple[int, dict]:
         return exc.code, json.loads(exc.read())
 
 
-def test_deleting_a_session_takes_its_stars_and_summaries_with_it(server):
+def test_deleting_a_session_takes_its_annotations_with_it(server):
     """Everything kept about a transcript lives in one record, and goes at once."""
     from transcript_viewer import library
 
@@ -784,18 +586,16 @@ def test_deleting_a_session_takes_its_stars_and_summaries_with_it(server):
     _try_post(server + "/api/library", {
         "key": key, "title": "kept things", "tags": ["one"],
         "starred": True, "starred_steps": ["1", "2"],
-        "summaries": {"call_a": "it listed files"},
     })
     stored = library.get(key)
     assert stored["starred_steps"] == ["1", "2"]
-    assert stored["summaries"] == {"call_a": "it listed files"}
 
     status, payload = _delete(server + f"/api/library?id={key}")
     assert status == 200 and payload["removed"]
 
     assert key not in library.load(), "the record survived the session"
     fresh = library.get(key)
-    assert fresh["starred_steps"] == [] and fresh["summaries"] == {}
+    assert fresh["starred_steps"] == []
     assert fresh["title"] == "" and fresh["tags"] == []
 
 
@@ -953,7 +753,7 @@ def test_a_server_holding_its_own_keys_refuses_to_take_one(server):
 
     from transcript_viewer import deploy
 
-    body = json.dumps({"name": "anthropic", "token": "sk-ant-" + "x" * 30}).encode()
+    body = json.dumps({"name": "github", "token": "g" * 40}).encode()
     request = urllib.request.Request(
         f"{server}/api/settings", data=body, method="POST"
     )

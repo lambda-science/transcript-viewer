@@ -29,9 +29,9 @@ from atif_make.container import is_container, open_container
 from atif_make.convert import convert
 from atif_make.detect import FORMATS
 
-from transcript_viewer.corpus import Entry, scan
+from transcript_viewer.corpus import Entry
 
-from . import ai, config, corpus, deploy, fetch, identity, ingest, library
+from . import config, corpus, deploy, fetch, identity, ingest, library
 from . import cache as cachelib
 
 # The page is a real .html file rather than a string in here: it is 2,232 lines
@@ -146,7 +146,7 @@ def _groups(rows: list[dict]) -> list[str]:
     return sorted(seen, key=lambda path: (not path.startswith("Local"), path))
 
 
-SITES = {"huggingface.co": "Hugging Face", "github.com": "GitHub"}
+SITES = {"github.com": "GitHub"}
 AGENTS = {"claude-code": "Claude Code", "codex": "Codex", "copilot": "Copilot"}
 
 
@@ -168,8 +168,6 @@ def _group(entry, source: str) -> str:
         parsed = urlparse(source)
         site = SITES.get(parsed.netloc, parsed.netloc or "Elsewhere")
         parts = [p for p in parsed.path.split("/") if p]
-        if parsed.netloc == "huggingface.co" and parts[:1] == ["datasets"]:
-            parts = parts[1:]
         # <owner>/<repo>/tree/<rev>/<inner…>
         inner = (
             parts[4:] if len(parts) > 4 and parts[2:3] in (["tree"], ["blob"]) else []
@@ -210,8 +208,8 @@ def _source_of(entry, home: Path, web: str, unpacked: dict | None = None) -> str
     return web if inner in (".", "") else f"{web}/{inner}"
 
 
-def _ai_state() -> dict:
-    """What the page may know about credentials: whether, and from where.
+def _settings_state() -> dict:
+    """What the page may know about fetch credentials.
 
     Never the key itself — only a four-character tail, enough to tell two
     apart. A page that cannot read the key cannot leak it.
@@ -222,22 +220,11 @@ def _ai_state() -> dict:
     holding", which is a question for whoever runs it and nobody else. This is
     reached on every page load, so it is the widest disclosure in the program.
     """
-    ok, reason = ai.status()
     site = deploy.current()
-    state = {
-        "available": ok,
-        "reason": reason,
-        "source": config.source("anthropic"),
-        "model": ai.MODEL,
-        "hosts": sorted(set(fetch.HOSTS)),
-    }
     if site.shared:
-        # Enough for the page to hide the controls nobody here may use.
-        return {**state, "secrets": {}, "aws_profile": "", "aws_profiles": [],
-                "hint": "", "managed": True}
+        return {"secrets": {}, "aws_profile": "", "aws_profiles": [],
+                "managed": True}
     return {
-        **state,
-        "hint": config.hint("anthropic"),
         # Every credential the viewer can hold — names and tails, never values.
         "secrets": config.state(),
         "aws_profile": config.aws_profile(),
@@ -317,15 +304,12 @@ POLICY: dict[tuple[str, str], str] = {
     # somebody else's machine, and the path is a caller's to choose.
     ("GET", "/api/reveal"): "local",
     ("POST", "/api/library"): "write",
-    ("POST", "/api/ai"): "write",
-    # All four drive the server's own AWS, Hugging Face and GitHub identity at a
+    # All four drive the server's own AWS and GitHub identity at a
     # URL the caller picked, and three of them write to its disk.
     ("POST", "/api/browse"): "admin",
     ("POST", "/api/measure"): "admin",
     ("POST", "/api/fetch"): "admin",
     ("POST", "/api/refetch"): "admin",
-    # Indexes whatever the server can see.
-    ("POST", "/api/scan"): "admin",
     # Writes the credentials every other request then spends.
     ("POST", "/api/settings"): "admin",
     # Takes up to two gigabytes onto the server's disk and adds it to a
@@ -394,6 +378,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
         # Nothing here is worth keeping: the page is re-read whenever it
         # changes, a trajectory is reconverted whenever its parser does, and a
         # session on disk grows while it is being read. `page()` goes to the
@@ -518,22 +503,6 @@ class _Handler(BaseHTTPRequestHandler):
             self._refuse()
             return
 
-        if url.path == "/api/scan":
-            # Deliberate, not automatic: this indexes every agent session on the
-            # machine, which is not something to do because a library is empty.
-            try:
-                found = scan()
-            except (ValueError, OSError) as exc:
-                self._json({"error": str(exc)}, 500)
-                return
-            with self.lock:
-                merged = corpus.merge(self.entries, found)
-                self.entries = merged
-                _Handler.entries = merged
-            corpus.save(merged)
-            self._json({"found": len(found), "total": len(merged)})
-            return
-
         if url.path == "/api/refetch":
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -614,15 +583,13 @@ class _Handler(BaseHTTPRequestHandler):
             # The key is read out of the body and handed straight to storage:
             # not logged, not echoed, not kept in memory beyond this call.
             try:
-                name = body.get("name") or "anthropic"
+                name = body.get("name") or "github"
                 if body.get("clear"):
                     config.clear_secret(name)
                 elif "aws_profile" in body:
                     config.set_aws_profile(body.get("aws_profile") or "")
-                elif "token" in body or "api_key" in body:
-                    config.set_secret(
-                        name, body.get("token") or body.get("api_key") or ""
-                    )
+                elif "token" in body:
+                    config.set_secret(name, body.get("token") or "")
                 else:
                     self._json({"error": "nothing to change"}, 400)
                     return
@@ -632,46 +599,7 @@ class _Handler(BaseHTTPRequestHandler):
             except OSError as exc:
                 self._json({"error": f"could not save settings: {exc.strerror}"}, 500)
                 return
-            self._json(_ai_state())
-            return
-
-        if url.path == "/api/ai":
-            if not ai.available():
-                self._json({"error": "AI features are not configured here."}, 501)
-                return
-            try:
-                length = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(length) or b"{}")
-            except (ValueError, json.JSONDecodeError):
-                self._json({"error": "expected a JSON body"}, 400)
-                return
-
-            entry = next((e for e in self.entries if e.key == body.get("key")), None)
-            if entry is None:
-                self._json({"error": "no such session"}, 404)
-                return
-            trajectory = self._trajectory(entry)
-            if trajectory is None:
-                self._json({"error": "could not read that session"}, 500)
-                return
-
-            try:
-                if body.get("what") == "call":
-                    self._stream_call(body, entry, trajectory)
-                elif body.get("what") == "ask":
-                    question = (body.get("question") or "").strip()
-                    if not question:
-                        self._json({"error": "ask what?"}, 400)
-                        return
-                    self._stream_ask(
-                        question, trajectory, body.get("history"), body.get("focus")
-                    )
-                else:
-                    self._json({"error": "unknown request"}, 400)
-            except ai.Unavailable as exc:
-                # Raised while building the client, before a byte is written, so
-                # a status code is still available.
-                self._json({"error": str(exc)}, 503)
+            self._json(_settings_state())
             return
 
         if url.path == "/api/library":
@@ -757,7 +685,7 @@ class _Handler(BaseHTTPRequestHandler):
         # Exactly what `transcript-viewer <path>` and `atif-make index` do: the CLI and
         # this button must never disagree about what counts as openable.
         try:
-            found = scan([target], origin="opened")
+            found = corpus.scan([target], origin="opened")
         except (ValueError, OSError) as exc:
             shutil.rmtree(home, ignore_errors=True)
             self._json({"error": str(exc)}, 400)
@@ -836,121 +764,6 @@ class _Handler(BaseHTTPRequestHandler):
             lambda: ingest.bring(plan, into, self.entries, _source_of, adopt)
         )
 
-    def _trajectory(self, entry) -> dict | None:
-        """The converted trajectory for an entry, from cache when it is there."""
-        cached = self.cache.get(entry.key)
-        if cached is not None:
-            return cached
-        try:
-            trajectory, _ = convert(Path(entry.path), entry.format)
-        except Exception:
-            return None
-        payload = trajectory.to_dict()
-        self.cache[entry.key] = payload
-        return payload
-
-    def _find_call(self, trajectory: dict, call_id: str) -> tuple[dict | None, Any]:
-        """One tool call and its output, by id."""
-        for step in trajectory.get("steps", []):
-            for candidate in step.get("tool_calls") or []:
-                if candidate.get("tool_call_id") == call_id:
-                    output = None
-                    for row in (step.get("observation") or {}).get("results") or []:
-                        if row.get("source_call_id") == call_id:
-                            output = row.get("content")
-                    return candidate, output
-        return None, None
-
-    def _frames(self, produce) -> None:
-        """Stream newline-delimited JSON frames as they are produced.
-
-        Not server-sent events: EventSource reconnects on close, which would
-        silently repeat a paid call. A plain streamed response read by fetch
-        does not.
-        """
-        self.send_response(200)
-        self.send_header("Content-Type", "application/x-ndjson")
-        self.send_header("Cache-Control", "no-store")
-        # Without this the browser withholds the first bytes while it sniffs the
-        # type, which swallows the beginning of a stream.
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        try:
-            for frame in produce():
-                self.wfile.write(json.dumps(frame).encode() + b"\n")
-                self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
-            # The reader navigated away. Nothing to report to.
-            pass
-
-    def _stream_call(self, body: dict, entry, trajectory: dict) -> None:
-        """Explain one tool call, reusing a summary already paid for."""
-        call_id = body.get("call_id")
-        stored = library.get(entry.key).get("summaries") or {}
-        if call_id in stored and not body.get("again"):
-            self._frames(
-                lambda: [{"t": "delta", "text": stored[call_id]}, {"t": "done"}]
-            )
-            return
-
-        call, output = self._find_call(trajectory, call_id)
-        if call is None:
-            self._json({"error": "no such call"}, 404)
-            return
-
-        # Built here so a credential problem is a status code, not a half-stream.
-        chunks = ai.summarise_call_stream(call, output)
-
-        def produce():
-            parts: list[str] = []
-            try:
-                for kind, piece in chunks:
-                    if kind != "text":
-                        yield {"t": "thinking"}
-                        continue
-                    parts.append(piece)
-                    yield {"t": "delta", "text": piece}
-            except ai.Unavailable as exc:
-                yield {"t": "error", "error": str(exc)}
-                return
-            summary = "".join(parts).strip()
-            if summary:
-                library.update(entry.key, summaries={**stored, call_id: summary})
-            yield {"t": "done"}
-
-        self._frames(produce)
-
-    def _stream_ask(
-        self, question: str, trajectory: dict, history: Any, focus: Any
-    ) -> None:
-        """Answer a question, saying which steps it is reading first."""
-        turns = history if isinstance(history, list) else []
-        earlier = (
-            [n for n in focus if isinstance(n, int)] if isinstance(focus, list) else []
-        )
-        steps = trajectory.get("steps", [])
-        used, chunks = ai.ask_stream(question, steps, turns, earlier)
-
-        def produce():
-            # The total matters as much as the count: 40 of 40 means the whole
-            # transcript was read, 40 of 3,000 means the answer saw a sliver.
-            yield {"t": "steps", "steps": used, "total": len(steps)}
-            try:
-                for kind, piece in chunks:
-                    # Thinking is signalled, not shown: the point is that
-                    # something is happening, not what it says.
-                    yield (
-                        {"t": "thinking"}
-                        if kind != "text"
-                        else {"t": "delta", "text": piece}
-                    )
-            except ai.Unavailable as exc:
-                yield {"t": "error", "error": str(exc)}
-                return
-            yield {"t": "done"}
-
-        self._frames(produce)
-
     def _json(self, payload: dict, status: int = 200) -> None:
         body = json.dumps(payload).encode()
         self.send_response(status)
@@ -996,7 +809,7 @@ class _Handler(BaseHTTPRequestHandler):
                 if Path(e.path).exists()
             ]
             payload = {
-                "ai": _ai_state(),
+                "settings": _settings_state(),
                 "downloads": str(fetch.destination(None)),
                 "sessions": library.decorate(rows),
                 "groups": _groups(rows),
@@ -1127,7 +940,7 @@ def serve(
     explicit_port: bool = False,
 ) -> None:
     handler = partial(_Handler)
-    _Handler.entries = entries if entries is not None else scan()
+    _Handler.entries = entries if entries is not None else corpus.load()
     budget = deploy.current().cache_bytes
     _Handler.cache = cachelib.Kept(int(budget) if budget else cachelib.DEFAULT_BUDGET)
     _Handler.media = cachelib.Kept(int(budget) if budget else cachelib.DEFAULT_BUDGET)

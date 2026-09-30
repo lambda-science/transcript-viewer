@@ -52,9 +52,6 @@ _DEFAULTS: dict[str, Any] = {
     # keys — "12" at the top level, "<trajectory>-3" inside a subagent, whose
     # ids restart at 1 — so a star cannot land on the wrong step.
     "starred_steps": [],
-    # Summaries the model has already produced, by tool-call id. Cached here so
-    # a call is paid for once, and so they survive a restart like any other note.
-    "summaries": {},
 }
 
 # One row of the join every read starts from. Written once because `load` and
@@ -62,7 +59,7 @@ _DEFAULTS: dict[str, Any] = {
 # of it would drift.
 _READ = (
     "SELECT t.content_hash AS k, t.source, t.into_dir, t.added, "
-    "       l.title, l.note, l.summaries, "
+    "       l.title, l.note, "
     "       m.starred, m.starred_steps "
     "FROM transcripts t "
     "LEFT JOIN labels l ON l.content_hash = t.content_hash "
@@ -77,7 +74,6 @@ def _record(row: Any, tags_: list[str]) -> dict:
         "into": row["into_dir"] or "",
         "title": row["title"] or "",
         "note": row["note"] or "",
-        "summaries": db.loads(row["summaries"], {}),
         "starred": bool(row["starred"]),
         "starred_steps": db.loads(row["starred_steps"], []),
         "tags": tags_,
@@ -121,14 +117,6 @@ def _clean(name: str, value: Any) -> Any:
         return _clean_tags(value)
     if name == "starred_steps":
         return _clean_steps(value)
-    if name == "summaries":
-        if not isinstance(value, dict):
-            return {}
-        return {
-            str(k)[:120]: str(v)[:4000]
-            for k, v in value.items()
-            if isinstance(k, str) and isinstance(v, str)
-        }
     if name == "starred":
         return bool(value)
     return str(value).strip()[:500] if value is not None else ""
@@ -190,18 +178,16 @@ def update(key: str, path: Path | str | None = None, **fields: Any) -> dict:
 
         # Pruning is per table now, which is the behaviour anyone would expect:
         # clearing a note should not cost you your stars.
-        if record["title"] or record["note"] or record["summaries"]:
+        if record["title"] or record["note"]:
             conn.execute(
-                "INSERT INTO labels(content_hash, title, note, summaries, by_user, at)"
-                " VALUES (?,?,?,?,?,?) ON CONFLICT(content_hash) DO UPDATE SET "
+                "INSERT INTO labels(content_hash, title, note, by_user, at)"
+                " VALUES (?,?,?,?,?) ON CONFLICT(content_hash) DO UPDATE SET "
                 "title = excluded.title, note = excluded.note, "
-                "summaries = excluded.summaries, by_user = excluded.by_user, "
-                "at = excluded.at",
+                "by_user = excluded.by_user, at = excluded.at",
                 (
                     key,
                     record["title"],
                     record["note"],
-                    json.dumps(record["summaries"]),
                     ME,
                     db.now(),
                 ),
@@ -251,12 +237,6 @@ def _forget_if_bare(conn: Any, key: str) -> None:
     ).fetchone()
     if row is None or row["source"] or row["into_dir"]:
         return
-    # Positional, and the key given three times. Named placeholders are spelled
-    # differently by every driver, and one style throughout is what keeps the
-    # translation to a single substitution.
-    # Every column is named and read by name. SQLite's rows answer to a number
-    # as well; PostgreSQL's, as this reads them, do not — so a positional read
-    # works until the day it is asked of the other engine.
     held = conn.execute(
         "SELECT EXISTS(SELECT 1 FROM labels WHERE content_hash = ?) "
         "    OR EXISTS(SELECT 1 FROM tags   WHERE content_hash = ?) "

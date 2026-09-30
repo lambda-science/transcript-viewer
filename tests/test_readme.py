@@ -19,18 +19,10 @@ FLAT = " ".join(README.split())
 
 # (claim, marker proving it in the source, source file)
 CLAIMS = [
-    ("with no button to press", "function callSummary", "src/transcript_viewer/page.html"),
-    ("read all", "read all ${num(seen)}", "src/transcript_viewer/page.html"),
     ("~/.transcript-viewer/config.json", 'store.ROOT / "config.json"', "src/transcript_viewer/config.py"),
     ("0600", "0o600", "src/transcript_viewer/store.py"),
     ("0700", "0o700", "src/transcript_viewer/store.py"),
     ("nosniff", "X-Content-Type-Options", "src/transcript_viewer/viewer.py"),
-    ("newline-delimited JSON", "application/x-ndjson", "src/transcript_viewer/viewer.py"),
-    ("Thinking…", '"t": "thinking"', "src/transcript_viewer/viewer.py"),
-    ("skips thinking", "thinking=False", "src/transcript_viewer/ai.py"),
-    ("quadratic", "HISTORY_TURNS", "src/transcript_viewer/ai.py"),
-    ("links into the transcript", "function jumpToStep", "src/transcript_viewer/page.html"),
-    ("--extra ai", "ai = [", "pyproject.toml"),
     ("re-read whenever it changes", "def page()", "src/transcript_viewer/viewer.py"),
     ("stat per page load", "PAGE_PATH.stat()", "src/transcript_viewer/viewer.py"),
     (
@@ -40,7 +32,7 @@ CLAIMS = [
     ),
     ("binds `127.0.0.1`", '"127.0.0.1"', "src/transcript_viewer/viewer.py"),
     ("take what is new", "def cmd_sync", "src/transcript_viewer/cli.py"),
-    ("only because it is named here", "identity_header", "src/transcript_viewer/deploy.py"),
+    ("only because it is named in", "identity_header", "src/transcript_viewer/deploy.py"),
 ]
 
 
@@ -85,7 +77,6 @@ RETIRED = [
     ("Keep watching", "the timer, replaced by a refresh"),
     ("filed into a collection", "collections, replaced by the tree"),
     ("editable in the dialog", "the download destination field"),
-    ("With AI support", "the per-transcript AI switch, replaced by the global one"),
 ]
 
 
@@ -111,12 +102,6 @@ def test_the_page_is_a_file_of_its_own():
 REMOVED = [
     ("disable_nagle_algorithm", "src/transcript_viewer/viewer.py", "TCP_NODELAY is set"),
     ("summary · new", "src/transcript_viewer/page.html", "summary · new"),
-    (
-        "off for this transcript</span>",
-        "src/transcript_viewer/viewer.py",
-        "off for this transcript",
-    ),
-    ('onclick="clearAsk()"', "src/transcript_viewer/page.html", "clear</span>"),
 ]
 
 
@@ -160,7 +145,8 @@ def test_every_extra_offered_in_the_readme_exists():
 def test_every_extra_that_exists_is_mentioned():
     """An extra nobody is told about may as well not be there."""
     project = Path("pyproject.toml").read_text()
-    block = project.split("[project.optional-dependencies]")[1].split("\n[")[0]
+    _, found, rest = project.partition("[project.optional-dependencies]")
+    block = rest.split("\n[", 1)[0] if found else ""
     defined = set(re.findall(r"^([a-z][a-z0-9-]*) = \[", block, re.MULTILINE))
     readme = Path("README.md").read_text()
     unmentioned = {name for name in defined if name not in readme}

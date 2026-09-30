@@ -128,7 +128,9 @@ def test_a_write_that_fails_part_way_leaves_the_record_as_it_was(store, monkeypa
 
     monkeypatch.setattr(library.json, "dumps", boom)
     with pytest.raises(OSError):
-        library.update("k1", store, title="Doomed", tags=["gone"])
+        library.update(
+            "k1", store, title="Doomed", tags=["gone"], starred_steps=["1"]
+        )
 
     record = library.get("k1", store)
     assert record["title"] == "Original"
