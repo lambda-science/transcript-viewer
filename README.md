@@ -59,12 +59,9 @@ authenticating proxy.
 
 ## Development
 
-This checkout resolves `atif-make` from `../atif-make` for joint development.
-Without that sibling checkout, ignore the local source override:
-
 ```sh
-uv sync --no-sources
-uv run --no-sources pytest
+uv sync
+uv run pytest
 ```
 
 The page is re-read whenever it changes, at the cost of one stat per page load;

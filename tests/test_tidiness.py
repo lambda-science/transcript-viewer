@@ -81,22 +81,8 @@ def test_no_constant_is_left_behind(path):
     assert not dead, f"{path.name} defines constants nothing reads: {', '.join(dead)}"
 
 
-def test_the_converter_is_developed_from_next_door():
-    """A viewer feature usually needs the parser to record the thing first.
-
-    Resolving atif-make from PyPI made every such change look like it had
-    failed: the page was local, the converter was the release, and the viewer
-    faithfully drew what the old parser handed it. The declaration is what
-    makes `uv run` here mean the working copy.
-    """
-    project = (ROOT / "pyproject.toml").read_text()
-
-    assert "[tool.uv.sources]" in project
-    assert 'atif-make = { path = "../atif-make", editable = true }' in project
-
-
 def test_what_is_published_still_depends_on_a_version_not_a_path():
-    """uv drops the source when it builds, and the range has to survive it."""
+    """Remote installs need a version, not a checkout-relative path."""
     project = (ROOT / "pyproject.toml").read_text()
     declared = project.split("[project.optional-dependencies]")[0]
 

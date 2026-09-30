@@ -22,22 +22,6 @@ transcript-viewer = "transcript_viewer.cli:main"
 [dependency-groups]
 dev = ["pytest>=8.0"]
 
-# Develop against the converter in the next directory, not the release.
-#
-# The two repos change together — a viewer feature usually needs the parser to
-# record the thing first — and resolving `atif-make` from PyPI meant every such
-# change looked like it had failed. A parser fix that made a session's
-# delegation three levels deep was invisible here for exactly that reason: the
-# page was local, the converter was 0.7.1, and the viewer faithfully drew what
-# the old parser handed it.
-#
-# uv drops `tool.uv.sources` when this package is built, so what is published
-# still depends on the version range above. A checkout without atif-make beside
-# it can pass `--no-sources`.
-[tool.uv.sources]
-atif-make = { path = "../atif-make", editable = true }
-
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
