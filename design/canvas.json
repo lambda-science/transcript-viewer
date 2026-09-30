@@ -1,0 +1,61 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 980,
+      "h": 600,
+      "title": "Eight subagents, two pairs overlapping"
+    },
+    {
+      "file": "Hover.dc.html",
+      "x": 1060,
+      "y": 0,
+      "w": 900,
+      "h": 500,
+      "title": "Hovering a lane"
+    },
+    {
+      "file": "Dense.dc.html",
+      "x": 0,
+      "y": 680,
+      "w": 980,
+      "h": 760,
+      "title": "Thirty subagents"
+    },
+    {
+      "file": "Anchor.dc.html",
+      "x": 1060,
+      "y": 580,
+      "w": 900,
+      "h": 590,
+      "title": "Lane to step, and back"
+    },
+    {
+      "file": "Quiet.dc.html",
+      "x": 1060,
+      "y": 1250,
+      "w": 900,
+      "h": 450,
+      "title": "Nothing was delegated"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "why-lanes",
+      "x": 0,
+      "y": -170,
+      "w": 420,
+      "text": "Measured from the real corpus, not invented:\n\n30 subagents in one transcript, median 2 steps, max 41.\nDurations 37s to 79 minutes, 99% of steps timed.\n25 pairs genuinely overlap — nested boxes cannot show that,\nwhich is the whole reason for lanes."
+    },
+    {
+      "id": "half-unnamed",
+      "x": 1060,
+      "y": -170,
+      "w": 380,
+      "text": "Only 50 of 142 subagents carry a description.\nThe lane label is therefore the kind, never the description,\nand the card degrades to kind + steps + tools rather than\ninventing a summary."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

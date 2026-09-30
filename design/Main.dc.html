@@ -1,0 +1,529 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+        />
+        <style>
+          /* Diwan's tokens, verbatim from src/transcript_viewer/page.html */
+          .root {
+            --bg: #18161c;
+            --surface: #232028;
+            --panel: #1d1b22;
+            --ink: #eae4d8;
+            --muted: #948d80;
+            --line: #332f3a;
+            --accent: #d3894b;
+            --soft: rgba(211, 137, 75, 0.13);
+            --hl: rgba(211, 137, 75, 0.25);
+            --ok: #7fbf8f;
+            --dim: var(--muted);
+            --faint: var(--muted);
+            --sunk: var(--bg);
+            --font-ui: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            --font-serif: Newsreader, Georgia, serif;
+            --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+          }
+          .root.paper {
+            --bg: #f6f2ea;
+            --surface: #fffdf8;
+            --panel: #faf6ee;
+            --ink: #241f18;
+            --muted: #7d7466;
+            --line: #e5ddcd;
+            --accent: #b0522a;
+            --soft: rgba(176, 82, 42, 0.09);
+            --hl: rgba(233, 180, 76, 0.3);
+            --ok: #3f7d4e;
+          }
+          body {
+            margin: 0;
+            font-family: var(--font-ui);
+          }
+          a {
+            color: #d3894b;
+          }
+          a:hover {
+            color: #b0522a;
+          }
+          .lane-bar {
+            position: absolute;
+            top: 4px;
+            height: 14px;
+            border-radius: 3px;
+            background: var(--accent);
+            opacity: 0.85;
+          }
+          .lane-rule {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 11px;
+            height: 1px;
+            background: var(--line);
+          }
+          .tick {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: var(--line);
+            opacity: 0.55;
+          }
+          .together {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            background: var(--hl);
+            pointer-events: none;
+          }
+        </style>
+      </helmet>
+
+      <div
+        class="root {{theme}}"
+        style="
+          background: var(--bg);
+          color: var(--ink);
+          font-family: var(--font-ui);
+          width: 980px;
+          min-height: 560px;
+          box-sizing: border-box;
+        "
+      >
+        <!-- the app's own header bar, matched: 52px, --panel, 1px --line -->
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 0 18px;
+            height: 52px;
+            border-bottom: 1px solid var(--line);
+            background: var(--panel);
+            box-sizing: border-box;
+          "
+        >
+          <span
+            style="
+              font: 600 18px var(--font-serif);
+              letter-spacing: -0.01em;
+              color: var(--ink);
+            "
+            >Transcript Viewer</span
+          >
+          <div
+            style="
+              flex: 1;
+              min-width: 0;
+              display: flex;
+              align-items: baseline;
+              gap: 10px;
+              font-size: 12.5px;
+              color: var(--muted);
+              overflow: hidden;
+            "
+          >
+            <span>Local</span><span style="opacity: 0.5">·</span>
+            <span>PaperParser</span><span style="opacity: 0.5">·</span>
+            <span style="color: var(--ink)"
+              >Build the product from the zip spec</span
+            >
+          </div>
+        </div>
+
+        <!-- section header: the count and span are the two facts worth stating -->
+        <div
+          style="
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            padding: 18px 22px 0;
+          "
+        >
+          <h2
+            style="
+              margin: 0;
+              font: 600 15px var(--font-serif);
+              color: var(--ink);
+              letter-spacing: -0.01em;
+            "
+          >
+            Delegation
+          </h2>
+          <span style="font: 11px var(--font-mono); color: var(--muted)"
+            >8 subagents · 47 min · 2 ran alongside another</span
+          >
+          <div style="margin-left: auto; display: flex; gap: 6px">
+            <span
+              style="
+                border: 1px solid var(--ink);
+                background: var(--ink);
+                color: var(--bg);
+                border-radius: 999px;
+                padding: 3px 11px;
+                font-size: 12px;
+              "
+              >Timeline</span
+            >
+            <span
+              style="
+                border: 1px solid var(--line);
+                background: var(--panel);
+                color: var(--dim);
+                border-radius: 999px;
+                padding: 3px 11px;
+                font-size: 12px;
+              "
+              >List</span
+            >
+          </div>
+        </div>
+
+        <!-- the chart -->
+        <div
+          style="
+            margin: 14px 22px 0;
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            background: var(--panel);
+            padding: 14px 16px 10px;
+          "
+        >
+          <!-- axis -->
+          <div
+            style="
+              display: grid;
+              grid-template-columns: 150px 1fr;
+              gap: 0 12px;
+              align-items: end;
+              margin-bottom: 6px;
+            "
+          >
+            <div></div>
+            <div style="position: relative; height: 14px">
+              <sc-for list="{{ticks}}" as="t" hint-placeholder-count="5">
+                <span
+                  style="position:absolute;transform:translateX(-50%);
+                font:10px var(--font-mono);color:var(--faint);white-space:nowrap;
+                left:{{t.at}}"
+                  >{{t.label}}</span
+                >
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- the main thread: one lane, its gaps are where it waited -->
+          <div
+            style="
+              display: grid;
+              grid-template-columns: 150px 1fr;
+              gap: 0 12px;
+              align-items: center;
+              padding: 3px 0 5px;
+              border-bottom: 1px solid var(--line);
+            "
+          >
+            <div
+              style="
+                display: flex;
+                align-items: baseline;
+                gap: 7px;
+                min-width: 0;
+              "
+            >
+              <span style="font: 600 12px var(--font-mono); color: var(--ink)"
+                >main thread</span
+              >
+              <span style="font: 10px var(--font-mono); color: var(--faint)"
+                >534</span
+              >
+            </div>
+            <div style="position: relative; height: 22px">
+              <div class="lane-rule"></div>
+              <sc-for list="{{ticks}}" as="t" hint-placeholder-count="5">
+                <span class="tick" style="left:{{t.at}}"></span>
+              </sc-for>
+              <sc-for list="{{mainRuns}}" as="r" hint-placeholder-count="6">
+                <span
+                  class="lane-bar"
+                  style="left:{{r.at}};width:{{r.w}};
+                background:var(--ink);opacity:.9;height:14px"
+                ></span>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- the subagents -->
+          <sc-for list="{{lanes}}" as="lane" hint-placeholder-count="8">
+            <div
+              style="
+                display: grid;
+                grid-template-columns: 150px 1fr;
+                gap: 0 12px;
+                align-items: center;
+                padding: 2px 0;
+              "
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: baseline;
+                  gap: 7px;
+                  min-width: 0;
+                "
+              >
+                <span
+                  style="
+                    color: var(--accent);
+                    font-weight: 700;
+                    font-size: 11px;
+                  "
+                  >⤷</span
+                >
+                <span
+                  style="
+                    font: 12px var(--font-mono);
+                    color: var(--accent);
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                  "
+                  >{{lane.kind}}</span
+                >
+                <span
+                  style="
+                    font: 10px var(--font-mono);
+                    color: var(--faint);
+                    margin-left: auto;
+                    flex: none;
+                  "
+                  >{{lane.steps}}</span
+                >
+              </div>
+              <div style="position: relative; height: 22px">
+                <div class="lane-rule"></div>
+                <sc-for list="{{ticks}}" as="t" hint-placeholder-count="5">
+                  <span class="tick" style="left:{{t.at}}"></span>
+                </sc-for>
+                <span
+                  class="together"
+                  style="left:{{lane.bandAt}};width:{{lane.bandW}};
+                opacity:{{lane.bandOn}}"
+                ></span>
+                <span
+                  class="lane-bar"
+                  style="left:{{lane.at}};width:{{lane.w}}"
+                ></span>
+                <span
+                  style="position:absolute;top:3px;left:{{lane.labelAt}};
+                font:10px var(--font-mono);color:var(--muted);white-space:nowrap;
+                padding-left:6px"
+                  >{{lane.took}}</span
+                >
+              </div>
+            </div>
+          </sc-for>
+
+          <!-- legend, in the app's pill vocabulary -->
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 14px;
+              margin-top: 12px;
+              padding-top: 10px;
+              border-top: 1px solid var(--line);
+            "
+          >
+            <span
+              style="
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 11px;
+                color: var(--muted);
+              "
+            >
+              <span
+                style="
+                  width: 16px;
+                  height: 8px;
+                  border-radius: 2px;
+                  background: var(--ink);
+                  opacity: 0.9;
+                "
+              ></span>
+              main thread working
+            </span>
+            <span
+              style="
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 11px;
+                color: var(--muted);
+              "
+            >
+              <span
+                style="
+                  width: 16px;
+                  height: 8px;
+                  border-radius: 2px;
+                  background: var(--accent);
+                  opacity: 0.85;
+                "
+              ></span>
+              subagent running
+            </span>
+            <span
+              style="
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 11px;
+                color: var(--muted);
+              "
+            >
+              <span
+                style="
+                  width: 16px;
+                  height: 8px;
+                  border-radius: 2px;
+                  background: var(--hl);
+                "
+              ></span>
+              two or more at once
+            </span>
+            <span
+              style="
+                margin-left: auto;
+                font: 10px var(--font-mono);
+                color: var(--faint);
+              "
+            >
+              click a bar to open it
+            </span>
+          </div>
+        </div>
+
+        <div
+          style="
+            padding: 12px 22px 20px;
+            font-size: 11.5px;
+            color: var(--faint);
+            line-height: 1.5;
+          "
+        >
+          Laid out on the clock, from each step's timestamp. Where a transcript
+          carries no times the same lanes are laid out by step instead, and the
+          axis says so.
+        </div>
+      </div>
+    </x-dc>
+
+    <script
+      data-dc-script
+      data-props='{
+  "theme":{"editor":"enum","options":["dark","paper"],"default":"dark","section":"Theme"}
+}'
+    >
+      class Component extends DCLogic {
+        renderVals() {
+          // 47 minutes across the track.
+          const ticks = [
+            { at: "0%", label: "0" },
+            { at: "21%", label: "10m" },
+            { at: "43%", label: "20m" },
+            { at: "64%", label: "30m" },
+            { at: "85%", label: "40m" },
+          ];
+
+          // The main thread works, waits while a subagent runs, works again.
+          const mainRuns = [
+            { at: "0%", w: "6%" },
+            { at: "18%", w: "6%" },
+            { at: "34%", w: "4%" },
+            { at: "42%", w: "4%" },
+            { at: "62%", w: "6%" },
+            { at: "73%", w: "6%" },
+            { at: "95%", w: "5%" },
+          ];
+
+          // Two overlapping pairs, as the corpus really has.
+          const raw = [
+            {
+              kind: "Explore",
+              steps: 6,
+              at: 6,
+              end: 14,
+              took: "3m 40s",
+              band: [11, 14],
+            },
+            {
+              kind: "general-purpose",
+              steps: 2,
+              at: 11,
+              end: 17,
+              took: "2m 51s",
+              band: [11, 14],
+            },
+            { kind: "Explore", steps: 12, at: 24, end: 33, took: "4m 12s" },
+            {
+              kind: "general-purpose",
+              steps: 2,
+              at: 38,
+              end: 41,
+              took: "1m 22s",
+            },
+            {
+              kind: "Explore",
+              steps: 41,
+              at: 46,
+              end: 61,
+              took: "7m 05s",
+              band: [52, 58],
+            },
+            {
+              kind: "general-purpose",
+              steps: 3,
+              at: 52,
+              end: 58,
+              took: "2m 48s",
+              band: [52, 58],
+            },
+            {
+              kind: "general-purpose",
+              steps: 2,
+              at: 68,
+              end: 72,
+              took: "1m 51s",
+            },
+            { kind: "Explore", steps: 9, at: 79, end: 94, took: "6m 58s" },
+          ];
+
+          const lanes = raw.map((r) => ({
+            kind: r.kind,
+            steps: String(r.steps),
+            took: r.took,
+            at: r.at + "%",
+            w: r.end - r.at + "%",
+            labelAt: r.end + "%",
+            bandAt: (r.band ? r.band[0] : 0) + "%",
+            bandW: (r.band ? r.band[1] - r.band[0] : 0) + "%",
+            bandOn: r.band ? "1" : "0",
+          }));
+
+          return { theme: this.props.theme ?? "dark", ticks, mainRuns, lanes };
+        }
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,253 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+        />
+        <style>
+          .root {
+            --bg: #18161c;
+            --surface: #232028;
+            --panel: #1d1b22;
+            --ink: #eae4d8;
+            --muted: #948d80;
+            --line: #332f3a;
+            --accent: #d3894b;
+            --soft: rgba(211, 137, 75, 0.13);
+            --hl: rgba(211, 137, 75, 0.25);
+            --dim: var(--muted);
+            --faint: var(--muted);
+            --sunk: var(--bg);
+            --font-ui: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            --font-serif: Newsreader, Georgia, serif;
+            --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+          }
+          body {
+            margin: 0;
+            font-family: var(--font-ui);
+          }
+          a {
+            color: #d3894b;
+          }
+          a:hover {
+            color: #b0522a;
+          }
+        </style>
+      </helmet>
+
+      <div
+        class="root"
+        style="
+          background: var(--bg);
+          color: var(--ink);
+          font-family: var(--font-ui);
+          width: 900px;
+          min-height: 420px;
+          box-sizing: border-box;
+        "
+      >
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 0 18px;
+            height: 52px;
+            border-bottom: 1px solid var(--line);
+            background: var(--panel);
+            box-sizing: border-box;
+          "
+        >
+          <span
+            style="font: 600 18px var(--font-serif); letter-spacing: -0.01em"
+            >Transcript Viewer</span
+          >
+          <div
+            style="
+              flex: 1;
+              display: flex;
+              align-items: baseline;
+              gap: 10px;
+              font-size: 12.5px;
+              color: var(--muted);
+            "
+          >
+            <span>Local</span><span style="opacity: 0.5">·</span>
+            <span>Diary</span><span style="opacity: 0.5">·</span>
+            <span style="color: var(--ink)">Fix the auto-commit hook</span>
+          </div>
+        </div>
+
+        <!-- Nothing was delegated, so there is no chart and no empty frame around one.
+       The filter row simply carries one more count, greyed, and the transcript
+       starts where it always does. -->
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 22px 0;
+            flex-wrap: wrap;
+          "
+        >
+          <span
+            style="
+              border: 1px solid var(--ink);
+              background: var(--ink);
+              color: var(--bg);
+              border-radius: 999px;
+              padding: 3px 11px;
+              font-size: 12px;
+            "
+            >user</span
+          >
+          <span
+            style="
+              border: 1px solid var(--ink);
+              background: var(--ink);
+              color: var(--bg);
+              border-radius: 999px;
+              padding: 3px 11px;
+              font-size: 12px;
+            "
+            >agent</span
+          >
+          <span
+            style="
+              border: 1px solid var(--line);
+              background: var(--panel);
+              color: var(--dim);
+              border-radius: 999px;
+              padding: 3px 11px;
+              font-size: 12px;
+            "
+            >system</span
+          >
+          <span
+            style="
+              width: 1px;
+              background: var(--line);
+              align-self: stretch;
+              margin: 1px 6px;
+            "
+          ></span>
+          <span
+            style="
+              border: 1px solid var(--line);
+              background: var(--panel);
+              color: var(--dim);
+              border-radius: 999px;
+              padding: 3px 11px;
+              font-size: 12px;
+            "
+            >raw</span
+          >
+          <span
+            style="
+              border: 1px solid var(--line);
+              background: var(--panel);
+              color: var(--faint);
+              border-radius: 999px;
+              padding: 3px 11px;
+              font-size: 12px;
+              opacity: 0.5;
+            "
+          >
+            no delegation
+          </span>
+          <span
+            style="
+              margin-left: auto;
+              font: 11px var(--font-mono);
+              color: var(--faint);
+            "
+          >
+            41 steps · 6m 12s
+          </span>
+        </div>
+
+        <div style="padding: 16px 22px 0">
+          <div
+            style="
+              position: relative;
+              margin: 0 0 10px 46px;
+              padding: 9px 15px 11px;
+              border-left: 2px solid var(--accent);
+              border-radius: 0 9px 9px 0;
+              background: var(--soft);
+            "
+          >
+            <div
+              style="
+                font: 10px var(--font-mono);
+                color: var(--faint);
+                margin-bottom: 4px;
+              "
+            >
+              1 · user · 09:14:22
+            </div>
+            <div style="font-size: 13.5px; line-height: 1.55">
+              The diary vault stopped auto-committing overnight. Have a look at
+              the hook.
+            </div>
+          </div>
+
+          <div
+            style="
+              position: relative;
+              margin: 0 0 10px 46px;
+              padding: 9px 15px 11px;
+              border-left: 2px solid var(--ink);
+              border-radius: 0 9px 9px 0;
+            "
+          >
+            <div
+              style="
+                font: 10px var(--font-mono);
+                color: var(--faint);
+                margin-bottom: 4px;
+              "
+            >
+              2 · agent · 09:14:29 · claude-opus-5
+            </div>
+            <div
+              style="font-size: 13.5px; line-height: 1.55; color: var(--ink)"
+            >
+              I'll check whether the hook ran at all before looking at what it
+              does.
+            </div>
+          </div>
+        </div>
+
+        <div
+          style="
+            padding: 10px 22px 22px;
+            font-size: 11.5px;
+            color: var(--faint);
+            line-height: 1.5;
+          "
+        >
+          A transcript that delegated nothing shows no timeline — an empty chart
+          says less than no chart, and costs a screenful. The greyed count is
+          the only trace, so the absence is a fact rather than a missing
+          feature.
+        </div>
+      </div>
+    </x-dc>
+
+    <script data-dc-script data-props="{}">
+      class Component extends DCLogic {
+        renderVals() {
+          return {};
+        }
+      }
+    </script>
+  </body>
+</html>

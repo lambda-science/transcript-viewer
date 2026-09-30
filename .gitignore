@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.coverage
+PKG-INFO
+# Never commit converted transcripts — they contain real session content.
+*.trajectory.json
+dist/
+
+# Where "Add… from a URL" puts what it fetches. Someone else's transcripts,
+# and not ours to commit.
+transcript-downloads/

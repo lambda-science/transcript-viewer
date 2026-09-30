@@ -1,0 +1,297 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+        />
+        <style>
+          .root {
+            --bg: #18161c;
+            --surface: #232028;
+            --panel: #1d1b22;
+            --ink: #eae4d8;
+            --muted: #948d80;
+            --line: #332f3a;
+            --accent: #d3894b;
+            --soft: rgba(211, 137, 75, 0.13);
+            --hl: rgba(211, 137, 75, 0.25);
+            --dim: var(--muted);
+            --faint: var(--muted);
+            --sunk: var(--bg);
+            --shadow:
+              0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.45);
+            --font-ui: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            --font-serif: Newsreader, Georgia, serif;
+            --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+          }
+          body {
+            margin: 0;
+            font-family: var(--font-ui);
+          }
+          a {
+            color: #d3894b;
+          }
+          a:hover {
+            color: #b0522a;
+          }
+          .bar {
+            position: absolute;
+            top: 4px;
+            height: 14px;
+            border-radius: 3px;
+            background: var(--accent);
+            opacity: 0.85;
+          }
+          .rule {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 11px;
+            height: 1px;
+            background: var(--line);
+          }
+        </style>
+      </helmet>
+
+      <div
+        class="root"
+        style="
+          background: var(--bg);
+          color: var(--ink);
+          font-family: var(--font-ui);
+          width: 900px;
+          min-height: 560px;
+          box-sizing: border-box;
+          padding: 22px;
+        "
+      >
+        <div
+          style="
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            margin-bottom: 10px;
+          "
+        >
+          <h2
+            style="
+              margin: 0;
+              font: 600 15px var(--font-serif);
+              letter-spacing: -0.01em;
+            "
+          >
+            Delegation
+          </h2>
+          <span style="font: 11px var(--font-mono); color: var(--muted)"
+            >a lane and the step that started it</span
+          >
+        </div>
+
+        <!-- The chart, with one lane picked out -->
+        <div
+          style="
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            background: var(--panel);
+            padding: 14px 16px 12px;
+          "
+        >
+          <sc-for list="{{lanes}}" as="lane" hint-placeholder-count="3">
+            <div
+              style="display:grid;grid-template-columns:150px 1fr;gap:0 12px;align-items:center;
+           padding:2px 0;opacity:{{lane.dim}}"
+            >
+              <div style="display: flex; align-items: baseline; gap: 7px">
+                <span
+                  style="
+                    color: var(--accent);
+                    font-weight: 700;
+                    font-size: 11px;
+                  "
+                  >⤷</span
+                >
+                <span style="font: 12px var(--font-mono); color: var(--accent)"
+                  >{{lane.kind}}</span
+                >
+              </div>
+              <div style="position: relative; height: 22px">
+                <div class="rule"></div>
+                <span
+                  class="bar"
+                  style="left:{{lane.at}};width:{{lane.w}}"
+                ></span>
+                <span
+                  style="position:absolute;top:2px;left:{{lane.at}};font:10px var(--font-mono);
+                color:var(--accent);margin-left:-46px;opacity:{{lane.tagOn}}"
+                  >step 128</span
+                >
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- The leader: the chart and the transcript are the same run, so the tie is
+       drawn rather than described. -->
+        <div style="position: relative; height: 34px; margin-left: 162px">
+          <span
+            style="
+              position: absolute;
+              left: 24%;
+              top: 0;
+              bottom: 8px;
+              width: 1px;
+              background: var(--accent);
+              opacity: 0.5;
+            "
+          ></span>
+          <span
+            style="
+              position: absolute;
+              left: 24%;
+              bottom: 2px;
+              width: 7px;
+              height: 7px;
+              border-radius: 999px;
+              background: var(--accent);
+              margin-left: -3px;
+            "
+          ></span>
+        </div>
+
+        <!-- The step, exactly as the transcript draws it, with the delegation inside -->
+        <div
+          style="
+            position: relative;
+            margin: 0 0 10px 46px;
+            padding: 9px 15px 11px;
+            border-left: 2px solid var(--ink);
+            border-radius: 0 9px 9px 0;
+            background: var(--panel);
+          "
+        >
+          <div
+            style="
+              font: 10px var(--font-mono);
+              color: var(--faint);
+              margin-bottom: 5px;
+            "
+          >
+            128 · agent · 09:41:06 · claude-opus-5
+          </div>
+          <div style="font-size: 13.5px; line-height: 1.55; margin-bottom: 9px">
+            I'll look for everywhere the theme is applied before changing the
+            token.
+          </div>
+
+          <!-- the existing .branch component, unchanged: 1px accent, radius 9, ⤷ -->
+          <div
+            style="
+              border: 1px solid var(--accent);
+              border-radius: 9px;
+              background: var(--panel);
+              overflow: hidden;
+            "
+          >
+            <div
+              style="
+                padding: 9px 12px;
+                font-size: 12.5px;
+                display: flex;
+                gap: 9px;
+                align-items: center;
+                color: var(--accent);
+              "
+            >
+              <span style="font-weight: 700">⤷</span>
+              <b style="font-weight: 700">Explore</b>
+              <span
+                style="
+                  color: var(--dim);
+                  font-weight: 400;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                  white-space: nowrap;
+                "
+                >find every place the theme is set</span
+              >
+              <span
+                style="
+                  border: 1px solid var(--accent);
+                  border-radius: 999px;
+                  padding: 1px 7px;
+                  font-size: 10px;
+                  color: var(--accent);
+                  white-space: nowrap;
+                "
+                >12 steps</span
+              >
+              <span
+                style="
+                  border: 1px solid var(--line);
+                  border-radius: 999px;
+                  padding: 1px 7px;
+                  font-size: 10px;
+                  color: var(--dim);
+                  white-space: nowrap;
+                  margin-left: auto;
+                "
+              >
+                4m 12s
+              </span>
+              <span
+                style="
+                  font: 10px var(--font-mono);
+                  color: var(--faint);
+                  white-space: nowrap;
+                "
+              >
+                in timeline
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div
+          style="
+            font-size: 11.5px;
+            color: var(--faint);
+            line-height: 1.5;
+            padding-left: 46px;
+          "
+        >
+          The tie runs both ways: a lane carries the step number that started
+          it, and the step keeps the box it always had, now also saying how long
+          the subagent took and offering the way back out to the timeline.
+        </div>
+      </div>
+    </x-dc>
+
+    <script data-dc-script data-props="{}">
+      class Component extends DCLogic {
+        renderVals() {
+          const raw = [
+            { kind: "Explore", at: 6, end: 14, on: false },
+            { kind: "Explore", at: 24, end: 33, on: true },
+            { kind: "general-purpose", at: 38, end: 41, on: false },
+          ];
+          return {
+            lanes: raw.map((r) => ({
+              kind: r.kind,
+              at: r.at + "%",
+              w: r.end - r.at + "%",
+              dim: r.on ? "1" : ".45",
+              tagOn: r.on ? "1" : "0",
+            })),
+          };
+        }
+      }
+    </script>
+  </body>
+</html>

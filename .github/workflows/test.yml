@@ -1,0 +1,33 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      # The page's behaviour is JavaScript; its tests run under node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: uv python install ${{ matrix.python-version }}
+      # With the extra: the tests that drive the SDK boundary skip without it,
+      # and a silently skipped test is worse than no test.
+      - name: Run tests
+        run: uv run --no-sources --python ${{ matrix.python-version }} --extra ai pytest -q
+      - name: Fail if any test was skipped
+        run: |
+          uv run --no-sources --python ${{ matrix.python-version }} --extra ai pytest -q -rs \
+            | tee /tmp/out
+          ! grep -q "skipped" /tmp/out

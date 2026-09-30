@@ -1,0 +1,61 @@
+[project]
+name = "transcript-viewer"
+version = "0.16.1"
+description = "Browse agent transcripts in a local, dependency-free web viewer."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+# The only dependency is the converter. The viewer itself is stdlib http.server
+# plus one self-contained HTML page.
+# The floor is not politeness: this viewer imports atif_make.container, which
+# is how a benchmark published as one JSON array of a thousand runs becomes a
+# thousand sessions. An older atif-make fails to import at all.
+# 0.8.0 is where a Claude Code session that delegated more than one level deep
+# started converting to a tree. Against an older one the chart still draws, and
+# draws a flat row of subagents that nothing spawned — which reads as the
+# viewer being broken rather than the converter being old.
+dependencies = ["atif-make>=0.8.0"]
+
+[project.optional-dependencies]
+# Claude-backed explanations are opt-in, so the default install stays
+# dependency-free: pip install "transcript-viewer[ai]"
+# Datasets published as Parquet — METR's transcripts are the one so far. The
+# reader lives in atif-make, which only needs it to split a shard.
+parquet = ["atif-make[parquet]>=0.8.0"]
+ai = ["anthropic>=0.40"]
+# Only for a deployment serving more than one person. Two copies of the server
+# with two SQLite files means one person's stars exist on one and not the other,
+# which is a wrong answer rather than a slow one.
+postgres = ["psycopg[binary]>=3.1"]
+
+[project.scripts]
+transcript-viewer = "transcript_viewer.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+# Develop against the converter in the next directory, not the release.
+#
+# The two repos change together — a viewer feature usually needs the parser to
+# record the thing first — and resolving `atif-make` from PyPI meant every such
+# change looked like it had failed. A parser fix that made a session's
+# delegation three levels deep was invisible here for exactly that reason: the
+# page was local, the converter was 0.7.1, and the viewer faithfully drew what
+# the old parser handed it.
+#
+# uv drops `tool.uv.sources` when this package is built, so what is published
+# still depends on the version range above. A checkout without atif-make beside
+# it can pass `--no-sources`.
+[tool.uv.sources]
+atif-make = { path = "../atif-make", editable = true }
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/transcript_viewer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

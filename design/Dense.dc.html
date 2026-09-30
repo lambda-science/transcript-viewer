@@ -1,0 +1,395 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+        />
+        <style>
+          .root {
+            --bg: #18161c;
+            --surface: #232028;
+            --panel: #1d1b22;
+            --ink: #eae4d8;
+            --muted: #948d80;
+            --line: #332f3a;
+            --accent: #d3894b;
+            --soft: rgba(211, 137, 75, 0.13);
+            --hl: rgba(211, 137, 75, 0.25);
+            --ok: #7fbf8f;
+            --dim: var(--muted);
+            --faint: var(--muted);
+            --font-ui: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            --font-serif: Newsreader, Georgia, serif;
+            --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+          }
+          body {
+            margin: 0;
+            font-family: var(--font-ui);
+          }
+          a {
+            color: #d3894b;
+          }
+          a:hover {
+            color: #b0522a;
+          }
+          .bar {
+            position: absolute;
+            top: 2px;
+            height: 8px;
+            border-radius: 2px;
+            background: var(--accent);
+            opacity: 0.85;
+          }
+          .rule {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 6px;
+            height: 1px;
+            background: var(--line);
+            opacity: 0.6;
+          }
+          .tick {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: var(--line);
+            opacity: 0.4;
+          }
+          .together {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            background: var(--hl);
+          }
+        </style>
+      </helmet>
+
+      <div
+        class="root"
+        style="
+          background: var(--bg);
+          color: var(--ink);
+          font-family: var(--font-ui);
+          width: 980px;
+          min-height: 720px;
+          box-sizing: border-box;
+          padding: 20px 22px;
+        "
+      >
+        <div
+          style="
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            margin-bottom: 4px;
+          "
+        >
+          <h2
+            style="
+              margin: 0;
+              font: 600 15px var(--font-serif);
+              color: var(--ink);
+              letter-spacing: -0.01em;
+            "
+          >
+            Delegation
+          </h2>
+          <span style="font: 11px var(--font-mono); color: var(--muted)"
+            >30 subagents · 2h 14m · 9 ran alongside another</span
+          >
+          <div
+            style="
+              margin-left: auto;
+              display: flex;
+              gap: 6px;
+              align-items: center;
+            "
+          >
+            <span
+              style="
+                font: 10px var(--font-mono);
+                color: var(--faint);
+                margin-right: 4px;
+              "
+              >group by</span
+            >
+            <span
+              style="
+                border: 1px solid var(--ink);
+                background: var(--ink);
+                color: var(--bg);
+                border-radius: 999px;
+                padding: 3px 11px;
+                font-size: 12px;
+              "
+              >time</span
+            >
+            <span
+              style="
+                border: 1px solid var(--line);
+                background: var(--panel);
+                color: var(--dim);
+                border-radius: 999px;
+                padding: 3px 11px;
+                font-size: 12px;
+              "
+              >kind</span
+            >
+          </div>
+        </div>
+
+        <!-- At thirty lanes the row is 12px and the label column narrows: the shape of
+       the run has to survive, so the bars keep their weight and the type name is
+       what gets shortened. -->
+        <div
+          style="
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            background: var(--panel);
+            padding: 12px 16px 10px;
+          "
+        >
+          <div
+            style="
+              display: grid;
+              grid-template-columns: 118px 1fr;
+              gap: 0 10px;
+              margin-bottom: 5px;
+            "
+          >
+            <div></div>
+            <div style="position: relative; height: 13px">
+              <sc-for list="{{ticks}}" as="t" hint-placeholder-count="6">
+                <span
+                  style="position:absolute;transform:translateX(-50%);font:10px var(--font-mono);
+                color:var(--faint);left:{{t.at}}"
+                  >{{t.label}}</span
+                >
+              </sc-for>
+            </div>
+          </div>
+
+          <div
+            style="
+              display: grid;
+              grid-template-columns: 118px 1fr;
+              gap: 0 10px;
+              align-items: center;
+              padding: 2px 0 4px;
+              border-bottom: 1px solid var(--line);
+            "
+          >
+            <div style="display: flex; align-items: baseline; gap: 6px">
+              <span style="font: 600 11px var(--font-mono); color: var(--ink)"
+                >main thread</span
+              >
+            </div>
+            <div style="position: relative; height: 13px">
+              <div class="rule"></div>
+              <span
+                class="bar"
+                style="
+                  left: 0;
+                  width: 100%;
+                  background: var(--ink);
+                  opacity: 0.28;
+                "
+              ></span>
+              <sc-for list="{{mainRuns}}" as="r" hint-placeholder-count="8">
+                <span
+                  class="bar"
+                  style="left:{{r.at}};width:{{r.w}};background:var(--ink);opacity:.9"
+                ></span>
+              </sc-for>
+            </div>
+          </div>
+
+          <sc-for list="{{lanes}}" as="lane" hint-placeholder-count="30">
+            <div
+              style="
+                display: grid;
+                grid-template-columns: 118px 1fr;
+                gap: 0 10px;
+                align-items: center;
+                height: 13px;
+              "
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: baseline;
+                  gap: 5px;
+                  min-width: 0;
+                "
+              >
+                <span
+                  style="
+                    color: var(--accent);
+                    font-weight: 700;
+                    font-size: 10px;
+                  "
+                  >⤷</span
+                >
+                <span
+                  style="
+                    font: 10.5px var(--font-mono);
+                    color: var(--accent);
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                  "
+                  >{{lane.kind}}</span
+                >
+                <span
+                  style="
+                    font: 9.5px var(--font-mono);
+                    color: var(--faint);
+                    margin-left: auto;
+                    flex: none;
+                  "
+                  >{{lane.steps}}</span
+                >
+              </div>
+              <div style="position: relative; height: 13px">
+                <div class="rule"></div>
+                <span
+                  class="together"
+                  style="left:{{lane.bandAt}};width:{{lane.bandW}};opacity:{{lane.bandOn}}"
+                ></span>
+                <span
+                  class="bar"
+                  style="left:{{lane.at}};width:{{lane.w}}"
+                ></span>
+              </div>
+            </div>
+          </sc-for>
+
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 14px;
+              margin-top: 10px;
+              padding-top: 9px;
+              border-top: 1px solid var(--line);
+            "
+          >
+            <span
+              style="
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 11px;
+                color: var(--muted);
+              "
+            >
+              <span
+                style="
+                  width: 16px;
+                  height: 7px;
+                  border-radius: 2px;
+                  background: var(--hl);
+                "
+              ></span>
+              two or more at once
+            </span>
+            <span
+              style="
+                margin-left: auto;
+                font: 10px var(--font-mono);
+                color: var(--faint);
+              "
+            >
+              rows stay 13px to 40 lanes, then the panel scrolls
+            </span>
+          </div>
+        </div>
+      </div>
+    </x-dc>
+
+    <script data-dc-script data-props="{}">
+      class Component extends DCLogic {
+        renderVals() {
+          const ticks = [
+            { at: "0%", label: "0" },
+            { at: "18%", label: "25m" },
+            { at: "37%", label: "50m" },
+            { at: "56%", label: "1h15" },
+            { at: "75%", label: "1h40" },
+            { at: "94%", label: "2h05" },
+          ];
+
+          const mainRuns = [
+            { at: "0%", w: "4%" },
+            { at: "9%", w: "3%" },
+            { at: "17%", w: "4%" },
+            { at: "27%", w: "3%" },
+            { at: "36%", w: "5%" },
+            { at: "48%", w: "3%" },
+            { at: "58%", w: "4%" },
+            { at: "69%", w: "3%" },
+            { at: "78%", w: "5%" },
+            { at: "88%", w: "4%" },
+            { at: "96%", w: "4%" },
+          ];
+
+          // Thirty, weighted the way the corpus is: mostly short, a few long,
+          // several clusters where the agent fanned out.
+          const raw = [
+            ["Explore", 6, 3, 9, [6, 9]],
+            ["general-purpose", 2, 6, 11, [6, 9]],
+            ["general-purpose", 2, 13, 16],
+            ["Explore", 8, 19, 27, [22, 27]],
+            ["general-purpose", 2, 22, 29, [22, 27]],
+            ["general-purpose", 3, 31, 35],
+            ["Explore", 14, 38, 49, [41, 46]],
+            ["general-purpose", 2, 41, 46, [41, 46]],
+            ["general-purpose", 2, 41, 44, [41, 46]],
+            ["Explore", 5, 52, 58],
+            ["general-purpose", 2, 60, 63],
+            ["Explore", 11, 64, 73, [66, 71]],
+            ["general-purpose", 2, 66, 71, [66, 71]],
+            ["general-purpose", 2, 75, 78],
+            ["Explore", 7, 80, 87],
+            ["general-purpose", 4, 89, 94],
+            ["general-purpose", 2, 5, 8],
+            ["Explore", 3, 15, 20],
+            ["general-purpose", 2, 24, 27],
+            ["general-purpose", 2, 33, 37],
+            ["Explore", 9, 44, 53],
+            ["general-purpose", 2, 55, 58],
+            ["general-purpose", 3, 61, 65],
+            ["Explore", 4, 70, 76],
+            ["general-purpose", 2, 79, 82],
+            ["general-purpose", 2, 84, 88],
+            ["Explore", 6, 90, 97],
+            ["general-purpose", 2, 12, 15],
+            ["general-purpose", 2, 28, 31],
+            ["Explore", 41, 46, 68],
+          ];
+
+          const lanes = raw.map(([kind, steps, at, end, band]) => ({
+            kind,
+            steps: String(steps),
+            at: at + "%",
+            w: end - at + "%",
+            bandAt: (band ? band[0] : 0) + "%",
+            bandW: (band ? band[1] - band[0] : 0) + "%",
+            bandOn: band ? "1" : "0",
+          }));
+
+          return { ticks, mainRuns, lanes };
+        }
+      }
+    </script>
+  </body>
+</html>
