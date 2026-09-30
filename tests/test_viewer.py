@@ -288,6 +288,27 @@ def test_open_adds_an_uploaded_log_to_the_index(server):
     assert json.loads(body)["schema_version"] == "ATIF-v1.7"
 
 
+def test_open_accepts_nemo_relay_atif_after_large_observed_events(server):
+    trajectory = {
+        "agent": {"name": "nemo-relay", "version": "1"},
+        "extra": {"observed_events": [{"data": "x" * 20_000}]},
+        "schema_version": "ATIF-v1.7",
+        "session_id": "relay-session",
+        "trajectory_id": "relay-trajectory",
+        "steps": [{"step_id": 1, "source": "user", "message": "hello"}],
+    }
+    payload = json.dumps(trajectory).encode()
+    assert payload.index(b'"schema_version"') > 16_384
+
+    status, result = _post(
+        server + "/api/open", payload, "trajectory-relay.trajectory.json"
+    )
+
+    assert status == 200
+    _, body = _get(server + f"/api/trajectory?id={result['keys'][0]}")
+    assert json.loads(body)["session_id"] == "relay-session"
+
+
 def test_open_rejects_a_file_that_is_not_a_log(server):
     with pytest.raises(urllib.error.HTTPError) as caught:
         _post(server + "/api/open", b'{"grade":1}\n', "grades.jsonl")

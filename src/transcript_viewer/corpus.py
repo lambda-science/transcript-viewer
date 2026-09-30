@@ -205,7 +205,18 @@ def describe(path: Path, origin: str = "scanned") -> Entry | None:
     """Build an index entry for one file, or None if it is not convertible."""
     try:
         fmt = detect_format(path)
-    except (ValueError, OSError):
+    except ValueError:
+        # NeMo Relay can put a large observed-events payload before the schema,
+        # beyond atif-make's bounded detection read. The parser reads the whole
+        # document too, so retry an otherwise-unrecognised JSON file here.
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+            if not str(document.get("schema_version", "")).startswith("ATIF"):
+                return None
+            fmt = "atif"
+        except (AttributeError, json.JSONDecodeError, OSError):
+            return None
+    except OSError:
         return None
     stat = path.stat()
     if OPENED_ROOT in path.parents:
