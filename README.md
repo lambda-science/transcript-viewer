@@ -31,9 +31,14 @@ same Git requirement.
 transcript-viewer                         # open the local library
 transcript-viewer path/to/session.jsonl   # open one log
 transcript-viewer bundle.zip              # open an archive
+transcript-viewer s3://bucket/runs/session.json --profile my-profile
 transcript-viewer --port 8080 --no-open
 transcript-viewer sync s3://bucket/runs   # take what is new from S3
 ```
+
+Opening an S3 object requires the `aws` CLI and an authenticated AWS profile.
+Without `--profile`, the viewer uses its saved profile, `AWS_PROFILE`, or the
+AWS CLI default. The download is temporary and removed when the viewer stops.
 
 The viewer opens empty on a first run. Use **Add…** to import files, folders,
 archives, GitHub repositories, and S3 locations. Remote repositories use a

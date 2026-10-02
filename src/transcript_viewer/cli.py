@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from . import config, corpus, db, deploy, fetch, ingest, store, viewer
 from atif_make.container import is_container
@@ -129,7 +130,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Browse agent transcripts in a local viewer.",
     )
     parser.add_argument("input", nargs="?",
-                        help="file, directory or archive (default: the atif-make index)")
+                        help="file, directory, archive or S3 object (default: the local library)")
+    parser.add_argument("--profile", help="AWS profile to use for an S3 object")
     parser.add_argument("--port", type=int, default=None,
                         help="port to listen on (default: 7433, or the next free one)")
     parser.add_argument("--no-open", action="store_true", help="do not open a browser")
@@ -156,6 +158,23 @@ def main(argv: list[str] | None = None) -> int:
     # actually named `sync` is reachable as `./sync`.
     parser = sync_parser() if argv[:1] == ["sync"] else build_parser()
     args = parser.parse_args(argv[1:] if argv[:1] == ["sync"] else argv)
+    if parser.prog == "transcript-viewer" and args.input and args.input.startswith("s3://"):
+        bucket, _, key = args.input[len("s3://"):].partition("/")
+        if (not fetch.S3_BUCKET.fullmatch(bucket) or not key or key.endswith("/")
+                or Path(key).name in {"", ".", ".."}):
+            print("transcript-viewer: expected s3://bucket/path/to/file", file=sys.stderr)
+            return 2
+        tokens = config.tokens()
+        if args.profile is not None:
+            tokens["aws"] = args.profile
+        remote = fetch.Remote(name=Path(key).name, url=args.input)
+        try:
+            with TemporaryDirectory(prefix="transcript-viewer-") as directory:
+                args.input = str(next(fetch.download("s3", [remote], Path(directory), tokens)))
+                return args.func(args)
+        except (fetch.FetchError, OSError) as exc:
+            print(f"transcript-viewer: {exc}", file=sys.stderr)
+            return 1
     return args.func(args)
 
 

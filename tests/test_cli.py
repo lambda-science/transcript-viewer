@@ -2,6 +2,8 @@
 testing directly rather than only through the server."""
 
 import pytest
+from pathlib import Path
+from subprocess import CompletedProcess
 from transcript_viewer import corpus
 
 from transcript_viewer import cli
@@ -114,3 +116,56 @@ def test_no_open_is_passed_through(served, tmp_path):
     log.write_text(LOG)
     cli.main([str(log), "--no-open"])
     assert served["open_browser"] is False
+
+
+@pytest.mark.parametrize("profile", ["dashboard-production", None])
+def test_s3_object_is_downloaded_and_served_until_shutdown(monkeypatch, profile):
+    from transcript_viewer import config, fetch
+
+    url = "s3://phagos-production-scientific-ai/relay/trajectory-example.trajectory.json"
+    commands = []
+    paths = []
+    monkeypatch.setattr(config, "tokens", lambda: {"aws": "saved-profile"})
+    monkeypatch.setattr(fetch.shutil, "which", lambda name: "/usr/local/bin/aws")
+
+    def run(command, **kwargs):
+        commands.append(command)
+        Path(command[4]).write_text(LOG)
+        return CompletedProcess(command, 0, "", "")
+
+    def serve(entries, **kwargs):
+        paths.extend(Path(entry.path) for entry in entries)
+        assert len(paths) == 1 and paths[0].read_text() == LOG
+        assert kwargs == {"port": 8080, "open_browser": False, "explicit_port": True}
+
+    monkeypatch.setattr(fetch.subprocess, "run", run)
+    monkeypatch.setattr(cli, "serve", serve)
+    argv = [url, "--port", "8080", "--no-open"]
+    if profile is not None:
+        argv += ["--profile", profile]
+    assert cli.main(argv) == 0
+    assert commands == [[
+        "aws", "s3", "cp", url, str(paths[0]), "--only-show-errors",
+        "--profile", profile or "saved-profile",
+    ]]
+    assert not paths[0].exists()
+    assert config.tokens()["aws"] == "saved-profile"
+
+
+def test_s3_download_failure_is_reported(served, monkeypatch, capsys):
+    from transcript_viewer import fetch
+
+    def fail(*args, **kwargs):
+        raise fetch.FetchError("No usable AWS session")
+
+    monkeypatch.setattr(fetch, "_s3_download", fail)
+    assert cli.main(["s3://bucket/log.json", "--profile", "dashboard-production"]) == 1
+    assert "No usable AWS session" in capsys.readouterr().err
+    assert not served
+
+
+@pytest.mark.parametrize("url", ["s3://bucket", "s3://bucket/folder/", "s3://bad_bucket/a.json", "s3://bucket/.."])
+def test_s3_requires_an_object_path(served, capsys, url):
+    assert cli.main([url]) == 2
+    assert "expected s3://bucket/path/to/file" in capsys.readouterr().err
+    assert not served
