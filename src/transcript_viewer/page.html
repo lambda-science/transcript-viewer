@@ -3206,10 +3206,14 @@
 
   const toolIsRaw = (id) => (id in TOOLRAW ? TOOLRAW[id] : raw);
 
+  const resultContent = (r) =>
+    r?.content ?? r?.extra?.tool_result?.data?.content;
+
   function toolBody(id) {
     const held = CALLS[id];
     if (!held) return "";
     const { c, r } = held;
+    const content = resultContent(r);
     const view = TOOLVIEW[c.function_name];
     const shown =
       !toolIsRaw(id) && view && view.body
@@ -3217,13 +3221,13 @@
         : `<pre class="json">${hjson(c.arguments)}</pre>`;
     return (
       `<div class="io in"><span class="iol">call</span>${shown}</div>` +
-      (r && r.content
+      (content
         ? `<div class="io out"><span class="iol">output</span>${
-            typeof r.content !== "string"
-              ? body(r.content)
+            typeof content !== "string"
+              ? body(content)
               : !toolIsRaw(id) && view && view.output
-                ? view.output(r.content, c.arguments || {})
-                : pre(r.content)
+                ? view.output(content, c.arguments || {})
+                : pre(content)
           }</div>`
         : "")
     );
@@ -4894,7 +4898,10 @@
       parts.push(JSON.stringify(c.arguments || {}));
     }
     for (const r of s.observation?.results || []) {
-      if (typeof r.content === "string") parts.push(r.content);
+      const content = resultContent(r);
+      if (typeof content === "string") parts.push(content);
+      else if (Array.isArray(content))
+        parts.push(content.map((p) => p.text || "").join(" "));
     }
     return parts.join(" ").toLowerCase();
   }

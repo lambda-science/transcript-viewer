@@ -1450,6 +1450,52 @@ test("asking for the recording gives the recording, not the file view", () => {
   assert.ok(!/class="filelines"/.test(html), "and so does the output");
 });
 
+for (const content of [
+  "Nested answer <script>alert(1)</script>",
+  [{ type: "text", text: "Nested answer <script>alert(1)</script>" }],
+]) {
+  test(`a nested tool answer is rendered and searchable (${typeof content})`, () => {
+    const nested = {
+      trajectory_id: "child",
+      steps: [{
+        step_id: 1,
+        source: "agent",
+        tool_calls: [{ tool_call_id: "nested", function_name: "Task", arguments: {} }],
+        observation: { results: [{
+          source_call_id: "nested",
+          content: null,
+          extra: { tool_result: { data: { content } } },
+        }] },
+      }],
+    };
+    for (const raw of [false, true]) {
+      const result = run(`
+        raw = ${raw};
+        const child = ${JSON.stringify(nested)};
+        return {
+          html: branch({trajectory_id: "child"}, {subagent_trajectories: [child]}, 1),
+          search: haystack(child.steps[0]),
+        };
+      `);
+      assert.match(result.html, /class="io out"/);
+      assert.match(result.html, /Nested answer/);
+      assert.ok(!result.html.includes("<script>"), "the answer must be escaped");
+      assert.match(result.search, /nested answer/);
+    }
+  });
+}
+
+test("normal result content wins over the nested fallback, and missing results are safe", () => {
+  const contents = run(`return [
+    resultContent({content: "primary", extra: {tool_result: {data: {content: "fallback"}}}}),
+    resultContent({content: "", extra: {tool_result: {data: {content: "fallback"}}}}),
+    resultContent({extra: {tool_result: {data: {content: "fallback"}}}}),
+    resultContent({extra: {tool_result: {}}}),
+    resultContent(undefined),
+  ];`);
+  assert.deepStrictEqual(contents, ["primary", "", "fallback", undefined, undefined]);
+});
+
 test("a path with a space in it links to the whole path", () => {
   // A real one: "/Users/girish/Documents/Redwood Research/…" linked only as far
   // as "Redwood", so the link opened a directory that was not the file.
