@@ -3223,11 +3223,13 @@
       `<div class="io in"><span class="iol">call</span>${shown}</div>` +
       (content
         ? `<div class="io out"><span class="iol">output</span>${
-            typeof content !== "string"
-              ? body(content)
-              : !toolIsRaw(id) && view && view.output
-                ? view.output(content, c.arguments || {})
-                : pre(content)
+            body(content, (value) =>
+              toolIsRaw(id)
+                ? `<pre>${escText(value)}</pre>`
+                : view && view.output
+                  ? view.output(value, c.arguments || {})
+                  : pre(value),
+            )
           }</div>`
         : "")
     );
@@ -6697,15 +6699,15 @@
       : `<div class="md">${md(v)}</div>`;
   }
 
-  function body(v) {
-    if (typeof v === "string") return text(v);
+  function body(v, renderText = text) {
+    if (typeof v === "string") return renderText(v);
     if (!Array.isArray(v)) return "";
     return v
       .map((p) =>
         p.type === "image" && p.source
           ? `<a class="img" href="${esc(p.source.path)}" target="_blank" rel="noreferrer">
          <img loading="lazy" src="${esc(p.source.path)}" alt="${esc(p.source.media_type || "image")}"></a>`
-          : text(p.text || ""),
+          : renderText(p.text || ""),
       )
       .join("");
   }

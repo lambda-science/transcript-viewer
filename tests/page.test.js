@@ -1496,6 +1496,56 @@ test("normal result content wins over the nested fallback, and missing results a
   assert.deepStrictEqual(contents, ["primary", "", "fallback", undefined, undefined]);
 });
 
+for (const shape of ["string", "multipart", "nested"]) {
+  test(`JSON tool output defaults to formatted and toggles to the recording (${shape})`, () => {
+    const json = '{"success":true,"data":{"rows":[{"name":"<script>"}]}}';
+    const parts = [{ type: "text", text: json }];
+    const result = shape === "nested"
+      ? { extra: { tool_result: { data: { content: parts } } } }
+      : { content: shape === "string" ? json : parts };
+    const out = run(`
+      CALLS["json-output"] = {
+        c: {function_name: "catalog", arguments: {}},
+        r: ${JSON.stringify(result)},
+      };
+      const output = () => toolBody("json-output").split('<span class="iol">output</span>')[1];
+      const formatted = output();
+      const event = {preventDefault() {}, stopPropagation() {}};
+      flipTool(event, "json-output");
+      const recorded = output();
+      flipTool(event, "json-output");
+      return {formatted, recorded, restored: output()};
+    `);
+    assert.match(out.formatted, /class="j-key"/);
+    assert.match(out.formatted, /\n/);
+    assert.ok(!out.formatted.includes("<script>"), "JSON values must be escaped");
+    assert.ok(!out.recorded.includes('class="j-'), "raw output must keep the recording");
+    assert.ok(!out.recorded.includes("\n"), "raw output must keep the original spacing");
+    assert.ok(!out.recorded.includes("<script>"));
+    assert.strictEqual(out.restored, out.formatted);
+  });
+}
+
+test("multipart tool output keeps file formatting, images, and malformed JSON", () => {
+  const out = run(`
+    raw = true;
+    TOOLRAW["parts-output"] = false;
+    CALLS["parts-output"] = {
+      c: {function_name: "Read", arguments: {}},
+      r: {content: [{type: "text", text: "1\\thello"},
+        {type: "image", source: {path: "/image.png", media_type: "image/png"}}]},
+    };
+    const file = toolBody("parts-output");
+    CALLS["parts-output"].c.function_name = "catalog";
+    CALLS["parts-output"].r.content = [{type: "text", text: '{"data": <script>'}];
+    return {file, malformed: toolBody("parts-output")};
+  `);
+  assert.match(out.file, /class="filelines"/);
+  assert.match(out.file, /<img loading="lazy" src="\/image.png"/);
+  assert.match(out.malformed, /&lt;script&gt;/);
+  assert.ok(!out.malformed.includes('class="j-key"'));
+});
+
 test("a path with a space in it links to the whole path", () => {
   // A real one: "/Users/girish/Documents/Redwood Research/…" linked only as far
   // as "Redwood", so the link opened a directory that was not the file.
