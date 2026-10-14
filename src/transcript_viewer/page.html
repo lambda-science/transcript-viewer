@@ -6712,6 +6712,42 @@
       .join("");
   }
 
+  function earlierConversation(s, ctx) {
+    if (ctx.steps?.find((s) => s.source === "user") !== s) return "";
+    const recorded = s.extra?.llm_request?.messages;
+    if (!Array.isArray(recorded)) return "";
+    const messages = recorded.map((m) => m?.data ? {...m, ...m.data} : m || {});
+    const role = (m) =>
+      ({human: "user", ai: "agent", assistant: "agent"})[m.role || m.type] ||
+      m.role || m.type || "system";
+    const words = (v) => typeof v === "string" ? v :
+      Array.isArray(v) ? v.map((p) => typeof p === "string" ? p : p?.text || "").join("") : "";
+    const current = words(s.message);
+    const at = messages.findLastIndex((m) =>
+      role(m) === "user" && current && words(m.content) === current,
+    );
+    if (at <= 0) return "";
+    return `<details class="branch" open><summary><b>Earlier conversation</b>
+      <span class="desc">${many(at, "message")} before this run</span>
+      </summary><div class="inner">${messages.slice(0, at).map((m) => {
+        const r = role(m);
+        const parts = Array.isArray(m.content) ? [...m.content] : [m.content];
+        if (Array.isArray(m.tool_calls) && !parts.some((p) => p?.type === "function_call"))
+          parts.push(...m.tool_calls);
+        const content = parts.map((p) => {
+          if (typeof p === "string") return text(p);
+          if (!p || p.type === "reasoning") return "";
+          return typeof p.text === "string" || (p.type === "image" && p.source)
+            ? body([p]) : `<details class="tool"${OPEN_ALL ? " open" : ""}><summary>${esc(p.name || p.type || "Content")}</summary>
+                <div class="tbody"><pre class="json">${hjson(p)}</pre></div></details>`;
+        }).join("");
+        if (r !== "user" && r !== "agent")
+          return `<details class="tool"${OPEN_ALL ? " open" : ""}><summary>${esc(r)}${m.name ? ` · ${esc(m.name)}` : ""}</summary>
+            <div class="tbody">${content}</div></details>`;
+        return `<div class="step ${r}"><div class="role"><b>${r}</b></div>${content}</div>`;
+      }).join("")}</div></details>`;
+  }
+
   function step(s, ctx, depth, idx, prefix) {
     // Subagent trajectories number their own steps from 1, so scope their DOM ids
     // by trajectory to keep every anchor on the page unique.
@@ -6759,7 +6795,7 @@
       <div class="tbody" id="tb-${esc(id)}">${toolBody(id)}</div></details>`;
       for (const ref of refs) h += branch(ref, ctx, depth);
     }
-    return h + `</div>`;
+    return earlierConversation(s, ctx) + h + `</div>`;
   }
 
   /* A delegated subagent is its own complete trajectory. Render it collapsed, and

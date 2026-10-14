@@ -284,6 +284,78 @@ test("clicking a row action does not open the session", () => {
 });
 
 // ---- the trajectory view -----------------------------------------------------
+test("earlier conversation precedes the first user step, including in a branch", () => {
+  const first = {
+    step_id: 1, source: "user", message: "the last 12 months",
+    extra: {llm_request: {messages: [
+      {type: "system", data: {content: "Internal instructions"}},
+      {type: "human", data: {content: "Which phages have no assay use?"}},
+      {type: "ai", data: {content: [{type: "function_call", name: "ls", arguments: "{}"}]}},
+      {type: "tool", data: {name: "ls", content: ["SKILL.md"]}},
+      {type: "ai", data: {content: [
+        {type: "reasoning", encrypted_content: "opaque-reasoning"},
+        {type: "text", text: "Which **date range**? <script>unsafe</script>"},
+      ]}},
+      {type: "human", data: {content: "the last 12 months"}},
+    ]}},
+  };
+  const sub = {trajectory_id: "context", steps: [first, {...first, step_id: 2}]};
+  const out = run(`
+    const sub = ${JSON.stringify(sub)};
+    return {
+      first: step(sub.steps[0], sub, 0, 0, ""),
+      later: step(sub.steps[1], sub, 0, 1, ""),
+      branch: branch({trajectory_id: "context"}, {subagent_trajectories: [sub]}, 0),
+    };
+  `);
+  assert.match(out.first, /Earlier conversation/);
+  assert.match(out.first, /5 messages before this run/);
+  assert.ok(out.first.indexOf("Which phages") < out.first.indexOf('id="step-1"'));
+  assert.match(out.first, /<strong>date range<\/strong>/);
+  assert.match(out.first, /&lt;script&gt;/);
+  assert.doesNotMatch(out.first, /<script>|opaque-reasoning/);
+  assert.match(out.first, /function_call/);
+  assert.match(out.first, /<details class="tool"><summary>ls/);
+  assert.match(out.first, /SKILL.md/);
+  assert.match(out.first, /<details class="tool"><summary>system/);
+  assert.equal((out.first.match(/the last 12 months/g) || []).length, 1);
+  assert.doesNotMatch(out.later, /Earlier conversation/);
+  assert.equal((out.branch.match(/Earlier conversation/g) || []).length, 1);
+});
+
+test("history accepts role messages and omits context without a matching user turn", () => {
+  const out = run(`
+    const s = {step_id: 1, source: "user", message: "now", extra: {llm_request: {messages: [
+      {role: "user", content: "before"},
+      {role: "assistant", content: "What period?", tool_calls: [{name: "lookup", args: {q: "x"}}]},
+      {role: "user", content: [{type: "text", text: "now"}]},
+      {role: "system", content: "trailing instructions"},
+    ]}}};
+    const ctx = {steps: [s]};
+    const found = step(s, ctx, 0, 0, "");
+    s.message = "unrelated";
+    const missing = step(s, ctx, 0, 0, "");
+    s.extra.llm_request.messages = {};
+    return {found, missing, malformed: step(s, ctx, 0, 0, "")};
+  `);
+  assert.match(out.found, /before/);
+  assert.match(out.found, /What period\?/);
+  assert.match(out.found, /<summary>lookup<\/summary>/);
+  assert.doesNotMatch(out.found, /trailing instructions/);
+  assert.doesNotMatch(out.missing, /Earlier conversation/);
+  assert.doesNotMatch(out.malformed, /Earlier conversation/);
+});
+
+test("a request containing only the current message adds no earlier conversation", () => {
+  const html = run(`
+    const s = {step_id: 1, source: "user", message: "now", extra: {llm_request: {
+      messages: [{role: "user", content: "now"}],
+    }}};
+    return step(s, {steps: [s]}, 0, 0, "");
+  `);
+  assert.doesNotMatch(html, /Earlier conversation/);
+});
+
 test("render finds its session by key, not by list position", () => {
   // cur is a content key; indexing INDEX by it once left the pane on "Converting…".
   const painted = run(setup() + `render(); return main.innerHTML;`);
