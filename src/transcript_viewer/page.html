@@ -451,6 +451,11 @@
     text-transform: uppercase;
     letter-spacing: 0.09em;
   }
+  .stats-note {
+    color: var(--dim);
+    font-size: 12px;
+    margin: -12px 0 22px;
+  }
   /* ---- collection rail (Diwan's collectionTree, flattened) ---- */
   #tagbar {
     padding: 0 14px 10px;
@@ -4692,6 +4697,27 @@
     if (key !== cur) pick(key, false);
   }
 
+  function unwrapRelay(t) {
+    const s = t.steps?.[0], c = s?.tool_calls?.[0];
+    const sub = t.subagent_trajectories?.[0];
+    // Relay records entering DeepAgent as a delegation to the same agent.
+    if (!t.extra?.nemo_relay || t.steps?.length !== 1 ||
+        s.source !== "agent" || s.llm_call_count !== 0 ||
+        s.message || s.reasoning_content || s.metrics ||
+        s.tool_calls?.length !== 1 || c.function_name !== "DeepAgent" ||
+        t.subagent_trajectories?.length !== 1 ||
+        typeof sub.trajectory_id !== "string" || !/^[\w.-]+$/.test(sub.trajectory_id) ||
+        !t.agent?.name || sub.agent?.name !== t.agent.name)
+      return t;
+    const results = s.observation?.results || [];
+    if (results.length !== 1 || results[0].source_call_id !== c.tool_call_id ||
+        results[0].subagent_trajectory_ref?.length !== 1 ||
+        results[0].subagent_trajectory_ref[0].trajectory_id !== sub.trajectory_id)
+      return t;
+    return {...sub, session_id: t.session_id || sub.session_id,
+      extra: {...t.extra, ...sub.extra}, _stepPrefix: sub.trajectory_id + "-"};
+  }
+
   function pick(key, push = true) {
     cur = key;
     EDITING = null;
@@ -4706,7 +4732,7 @@
           main.innerHTML = `<div class="empty">${esc(t.error)}</div>`;
           return;
         }
-        traj = t;
+        traj = unwrapRelay(t);
         ZOOM = null;
         limit = PAGE_SIZE;
         query = "";
@@ -4848,7 +4874,7 @@
   /* Starred steps live on the session's library record, keyed the same way the
    anchors are — plain id at the top level, trajectory-scoped inside a subagent,
    whose ids restart at 1. */
-  const stepKey = (step, prefix) => (prefix || "") + step.step_id;
+  const stepKey = (step, prefix) => (prefix || traj?._stepPrefix || "") + step.step_id;
   const starredSteps = () =>
     (INDEX.find((e) => e.key === cur) || {}).starred_steps || [];
   const isStarred = (step, prefix) =>
@@ -6378,7 +6404,8 @@
       limit = pos + PAGE_SIZE;
       render();
     }
-    const el = document.getElementById("step-" + id);
+    const key = /^\d+$/.test(String(id)) ? (traj?._stepPrefix || "") + id : id;
+    const el = document.getElementById("step-" + key);
     if (!el) return false;
     // Unfolded before the scroll, not after: a step inside a subagent is inside
     // that subagent's box, and everything opened above the target moves it. Its
@@ -6397,11 +6424,76 @@
     return true;
   }
 
+  const recordedNumber = (v) =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
+
+  function stepTokens(s) {
+    const m = s.metrics || {}, x = m.extra || {};
+    // Only this response carries new usage; requests and observed events repeat history.
+    const messages = s.extra?.llm_response?.__nemo_relay_integrations_langchain_model_response?.messages;
+    const usages = (Array.isArray(messages) ? messages : [])
+      .map((m) => m?.data?.usage_metadata).filter((u) => u && typeof u === "object");
+    const sum = (read) => {
+      const values = usages.map(read).map(recordedNumber).filter((v) => v !== null);
+      return values.length ? values.reduce((a, b) => a + b, 0) : null;
+    };
+    return {
+      input: recordedNumber(m.prompt_tokens) ?? sum((u) => u.input_tokens),
+      output: recordedNumber(m.completion_tokens) ?? sum((u) => u.output_tokens),
+      read: recordedNumber(m.cached_tokens) ?? sum((u) => u.input_token_details?.cache_read),
+      write: recordedNumber(x.cache_creation_input_tokens) ?? sum((u) => u.input_token_details?.cache_creation),
+      reasoning: recordedNumber(x.reasoning_output_tokens) ?? sum((u) => u.output_token_details?.reasoning),
+    };
+  }
+
+  function runSummary(t) {
+    const runs = [];
+    const walk = (r) => {
+      runs.push(r);
+      (r.subagent_trajectories || []).forEach(walk);
+    };
+    walk(t);
+    const steps = runs.flatMap((r) => r.steps || []);
+    const agents = steps.filter((s) => s.source === "agent");
+    const calls = agents.map((s) => recordedNumber(s.llm_call_count));
+    const fields = {
+      input: "total_prompt_tokens", output: "total_completion_tokens",
+      read: "total_cached_tokens", write: null, reasoning: null,
+    };
+    const tokens = {}, partial = {};
+    const usage = runs.map((r) => ({
+      r, values: (r.steps || [])
+        .filter((s) => s.source === "agent" && s.llm_call_count !== 0).map(stepTokens),
+    }));
+    for (const [key, field] of Object.entries(fields)) {
+      let total = null, missing = false;
+      for (const {r, values: metrics} of usage) {
+        const values = metrics.map((m) => m[key]);
+        const final = field ? recordedNumber(r.final_metrics?.[field]) : null;
+        const known = values.filter((v) => v !== null);
+        const value = final ?? (known.length ? known.reduce((a, b) => a + b, 0) : null);
+        if (value !== null) total = (total ?? 0) + value;
+        if (final === null && values.some((v) => v === null)) missing = true;
+      }
+      tokens[key] = total;
+      partial[key] = missing && total !== null;
+    }
+    return {
+      steps: steps.length, embedded: steps.length - (t.steps || []).length,
+      agents: agents.length, users: steps.filter((s) => s.source === "user").length,
+      modelCalls: calls.some((v) => v !== null) ? calls.reduce((n, v) => n + (v ?? 0), 0) : null,
+      partialCalls: calls.some((v) => v === null),
+      toolTurns: steps.filter((s) => s.tool_calls?.length).length,
+      toolCalls: steps.reduce((n, s) => n + (s.tool_calls || []).length, 0),
+      duration: duration(spanOf(steps)), tokens, partial,
+    };
+  }
+
   function render() {
     const t = traj,
       e = INDEX.find((x) => x.key === cur) || {},
-      m = t.final_metrics || {},
       a = t.agent || {};
+    const summary = runSummary(t);
     const branches = branchIndex(t);
     const branchSteps = new Set(branches.map((b) => b.stepIndex));
     const q = query.trim().toLowerCase();
@@ -6429,19 +6521,21 @@
       <div class="sub">${esc(a.name)} ${esc(a.version || "")} · ${esc(a.model_name || "no model")} · ${esc(t.session_id || "")}</div>
     </div>
     <div class="stats">
-      ${stat(t.steps.length, "steps")}
-      ${(() => {
-        const d = duration(spanOf(t.steps));
-        return d
-          ? `<div class="stat"><b>${d}</b><span>duration</span></div>`
-          : "";
-      })()}
-      ${stat(counts.tools, "tool turns")}
-      ${stat(counts.reasoning, "reasoning")}
-      ${stat(m.total_prompt_tokens, "prompt")}
-      ${stat(m.total_completion_tokens, "output")}
-      ${stat(m.total_cached_tokens, "cached")}
+      ${stat(summary.steps, "recorded steps", "All user, agent and system steps, including embedded trajectories.")}
+      ${stat(summary.agents, "agent steps", "Recorded agent messages; delegation and model responses can be separate steps.")}
+      ${stat(summary.users, "user messages")}
+      ${summary.duration ? stat(summary.duration, "duration", "First to last recorded step across all embedded trajectories.") : ""}
+      ${stat(summary.modelCalls, "model calls", "Recorded model invocations; missing counts are not inferred from messages.", summary.partialCalls)}
+      ${stat(summary.toolTurns, "tool turns", "Steps containing one or more tool calls, including delegation.")}
+      ${stat(summary.toolCalls, "tool calls", "Individual calls, including delegation. One turn can call several tools.")}
+      ${stat(summary.tokens.input, "input tokens", "Total input across model calls, including cache reads and writes; repeated context counts on every call.", summary.partial.input)}
+      ${stat(summary.tokens.output, "output tokens", "Total model output, including reasoning tokens when reported by the provider.", summary.partial.output)}
+      ${stat(summary.tokens.read, "cache read", "Input tokens reused from cache; already included in input tokens.", summary.partial.read)}
+      ${stat(summary.tokens.write, "cache write", "Input tokens written to cache; already included in input tokens.", summary.partial.write)}
+      ${summary.tokens.reasoning !== null ? stat(summary.tokens.reasoning, "reasoning tokens", "Reasoning output tokens; already included in output tokens.", summary.partial.reasoning) : ""}
     </div>
+    <div class="stats-note">${summary.embedded ? `${num(t.steps.length)} main + ${num(summary.embedded)} embedded steps. ` : ""}Summary includes all embedded trajectories. Tool counts include calls to subagents. Filters below apply to the main trajectory.
+      Token totals use reported totals, falling back to recorded step usage. — means not recorded; ≥ means some usage is missing.</div>
     <div class="tabs">
       ${[
         ["trajectory", "Trajectory"],
@@ -6686,10 +6780,8 @@
     return trim(w) + "w";
   }
 
-  const stat = (v, l) =>
-    v == null
-      ? ""
-      : `<div class="stat"><b>${num(v)}</b><span>${l}</span></div>`;
+  const stat = (v, l, hint = "", partial = false) =>
+    `<div class="stat"${hint ? ` title="${esc(hint)}"` : ""}><b>${v == null ? "—" : (partial ? "≥" : "") + num(v)}</b><span>${l}</span></div>`;
 
   function text(v) {
     // Agent messages are written in Markdown; rendering them as such is the
@@ -6751,7 +6843,7 @@
   function step(s, ctx, depth, idx, prefix) {
     // Subagent trajectories number their own steps from 1, so scope their DOM ids
     // by trajectory to keep every anchor on the page unique.
-    const key = (prefix || "") + s.step_id;
+    const key = stepKey(s, prefix);
     const on = starredSteps().includes(key);
     let h = `<div class="step ${s.source}" id="step-${key}">
     <div class="gut">
@@ -6764,11 +6856,13 @@
     </div>
     <div class="role"><b>${esc(s.source)}</b>`;
     if (s.timestamp)
-      h += `<span>${esc(s.timestamp.replace("T", " ").replace(/\.\d+Z?$/, ""))}</span>`;
+      h += `<span>${esc(s.timestamp.slice(0, 19).replace("T", " "))}</span>`;
     if (s.model_name && s.source === "agent")
       h += `<span>${esc(s.model_name)}</span>`;
-    if (s.metrics?.completion_tokens)
-      h += `<span>${num(s.metrics.completion_tokens)} tok</span>`;
+    const tokens = stepTokens(s);
+    for (const [key, label] of Object.entries({input: "input", output: "output", read: "cache read", write: "cache write", reasoning: "reasoning"})) {
+      if (tokens[key] !== null) h += `<span>${num(tokens[key])} ${label}</span>`;
+    }
     h += `</div>`;
     if (s.reasoning_content)
       h += `<div class="think">${esc(s.reasoning_content)}</div>`;

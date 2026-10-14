@@ -182,6 +182,196 @@ const setup = (row = ROW, traj = TRAJ) => `
 `;
 
 // ---- step keys ---------------------------------------------------------------
+const RELAY = {
+  agent: {name: "relay"}, trajectory_id: "root",
+  final_metrics: {total_steps: 1},
+  steps: [{step_id: 1, source: "agent", llm_call_count: 0,
+    timestamp: "2026-10-14T00:05:26Z",
+    tool_calls: [{tool_call_id: "delegate", function_name: "DeepAgent"}]}],
+  extra: {observed_events: [{data: {usage_metadata: {input_tokens: 999999}}}]},
+  subagent_trajectories: [{
+    trajectory_id: "child", agent: {name: "worker"},
+    final_metrics: {total_prompt_tokens: 100, total_completion_tokens: 20},
+    steps: [
+      {step_id: 1, source: "user", message: "go"},
+      {step_id: 2, source: "agent", llm_call_count: 1,
+        timestamp: "2026-10-14T00:06:06Z",
+        metrics: {prompt_tokens: 100, completion_tokens: 20},
+        tool_calls: [{function_name: "a"}, {function_name: "b"}],
+        extra: {
+          llm_request: {messages: [{usage_metadata: {input_tokens: 888888}}]},
+          llm_response: {__nemo_relay_integrations_langchain_model_response: {
+            messages: [{data: {usage_metadata: {
+              input_tokens: 100, output_tokens: 20,
+              input_token_details: {cache_read: 80, cache_creation: 17},
+              output_token_details: {reasoning: 4},
+            }}}],
+          }},
+        },
+      },
+    ],
+    subagent_trajectories: [{trajectory_id: "grandchild", agent: {name: "helper"}, steps: [
+      {step_id: 1, source: "agent", llm_call_count: 2,
+        metrics: {prompt_tokens: 50, completion_tokens: 10, cached_tokens: 30,
+          extra: {cache_creation_input_tokens: 5, reasoning_output_tokens: 2}}},
+    ]}],
+  }],
+};
+
+test("the summary includes nested runs without counting repeated usage or wrapper model calls", () => {
+  const out = run(`return runSummary(${JSON.stringify(RELAY)})`);
+  assert.equal(out.steps, 4);
+  assert.equal(out.embedded, 3);
+  assert.equal(out.agents, 3);
+  assert.equal(out.users, 1);
+  assert.equal(out.modelCalls, 3);
+  assert.equal(out.partialCalls, false);
+  assert.equal(out.toolTurns, 2);
+  assert.equal(out.toolCalls, 3);
+  assert.equal(out.duration, "40s");
+  assert.deepEqual(out.tokens, {input: 150, output: 30, read: 110, write: 22, reasoning: 6});
+  assert.ok(Object.values(out.partial).every((v) => !v));
+});
+
+const FRAMEWORK_RELAY = JSON.parse(JSON.stringify(RELAY));
+FRAMEWORK_RELAY.agent = FRAMEWORK_RELAY.subagent_trajectories[0].agent;
+FRAMEWORK_RELAY.session_id = "original-session";
+FRAMEWORK_RELAY.extra.nemo_relay = {session_instance_id: "original-session"};
+FRAMEWORK_RELAY.steps[0].observation = {results: [{source_call_id: "delegate",
+  subagent_trajectory_ref: [{trajectory_id: "child"}]}]};
+
+test("Relay's framework wrapper opens directly without a fake delegation or inflated counts", () => {
+  const out = run(setup(ROW, FRAMEWORK_RELAY) + `
+    const raw = traj, original = JSON.stringify(raw);
+    traj = unwrapRelay(raw);
+    tab = "trajectory"; lens = "all"; query = ""; render();
+    return {html: main.innerHTML, summary: runSummary(traj),
+      branches: branchIndex(traj), lanes: laneIndex(traj),
+      session: traj.session_id, original, raw};
+  `);
+  assert.equal(out.session, "original-session");
+  assert.equal(out.summary.steps, 3);
+  assert.equal(out.summary.toolTurns, 1);
+  assert.equal(out.summary.toolCalls, 2);
+  assert.equal(out.summary.modelCalls, 3);
+  assert.equal(out.summary.tokens.input, 150);
+  assert.equal(out.branches.length, 0);
+  assert.ok(!out.lanes.some((l) => l.id === "child"));
+  assert.ok(!out.html.includes("DeepAgent"));
+  assert.deepEqual(JSON.parse(out.original), out.raw);
+});
+
+test("unwrapping keeps real delegation, step favourites and navigation scoped to the child", () => {
+  const wrapped = JSON.parse(JSON.stringify(FRAMEWORK_RELAY));
+  wrapped.subagent_trajectories[0].steps[1].observation = {results: [{
+    subagent_trajectory_ref: [{trajectory_id: "grandchild"}],
+  }]};
+  // Supply matching IDs for the real tool's result.
+  wrapped.subagent_trajectories[0].steps[1].tool_calls[0].tool_call_id = "actual-call";
+  wrapped.subagent_trajectories[0].steps[1].observation.results[0].source_call_id = "actual-call";
+  const out = run(setup({...ROW, starred_steps: ["child-2", "1"]}, wrapped) + `
+    traj = unwrapRelay(traj);
+    const lanes = laneIndex(traj), branches = branchIndex(traj);
+    const html = step(traj.steps[1], traj, 0, 1, "");
+    const user = step(traj.steps[0], traj, 0, 0, "");
+    let target;
+    document.getElementById = (id) => {target = id; return {
+      querySelectorAll: () => [], scrollIntoView() {}, style: {},
+    }};
+    jump(1, 2);
+    return {lanes, branches, html, user, target, facets: facets(traj.steps[1])};
+  `);
+  assert.equal(out.lanes.length, 1);
+  assert.equal(out.lanes[0].id, "grandchild");
+  assert.equal(out.lanes[0].depth, 0);
+  assert.equal(out.branches.length, 1);
+  assert.match(out.html, /id="step-child-2"/);
+  assert.match(out.html, /sstar on/);
+  assert.ok(!out.user.includes("sstar on"), "the hidden wrapper favourite must not star the user step");
+  assert.equal(out.target, "step-child-2");
+  assert.ok(out.facets.includes("favourited"));
+});
+
+test("ordinary delegations and wrappers with meaningful work are retained", () => {
+  const changes = [
+    (t) => {delete t.extra.nemo_relay;},
+    (t) => {t.steps.push({source: "user", message: "another step"});},
+    (t) => {t.steps[0].message = "real work";},
+    (t) => {t.steps[0].metrics = {prompt_tokens: 1};},
+    (t) => {t.steps[0].llm_call_count = 1;},
+    (t) => {t.steps[0].tool_calls[0].function_name = "Task";},
+    (t) => {t.subagent_trajectories[0].agent = {name: "other-agent"};},
+    (t) => {t.steps[0].observation.results[0].subagent_trajectory_ref[0].trajectory_id = "missing";},
+    (t) => {delete t.steps[0].tool_calls;},
+    (t) => {t.subagent_trajectories[0].trajectory_id = "unsafe'\"";},
+  ];
+  for (const change of changes) {
+    const t = JSON.parse(JSON.stringify(FRAMEWORK_RELAY));
+    change(t);
+    assert.equal(run(`const t = ${JSON.stringify(t)}; return unwrapRelay(t) === t;`), true);
+  }
+  assert.equal(run(`const t = {extra: {nemo_relay: {}}}; return unwrapRelay(t) === t;`), true);
+});
+
+test("the summary prefers reported totals, falls back per field, and preserves unknown and zero", () => {
+  const out = run(`return runSummary({steps: [
+    {source: "agent", metrics: {prompt_tokens: 10, completion_tokens: 2, cached_tokens: 0}},
+    {source: "agent", llm_call_count: 1}
+  ], final_metrics: {total_prompt_tokens: 123}})`);
+  assert.deepEqual(out.tokens, {input: 123, output: 2, read: 0, write: null, reasoning: null});
+  assert.deepEqual(out.partial, {input: false, output: true, read: true, write: false, reasoning: false});
+  assert.equal(out.modelCalls, 1);
+  assert.equal(out.partialCalls, true);
+  const empty = run(`return runSummary({steps: [{source: "agent"}]})`);
+  assert.equal(empty.modelCalls, null);
+  assert.equal(empty.tokens.input, null);
+});
+
+test("step usage prefers ATIF metrics and ignores malformed token values", () => {
+  const out = run(`return stepTokens({metrics: {
+    prompt_tokens: 0, completion_tokens: -1, cached_tokens: "20",
+    extra: {cache_creation_input_tokens: Infinity, reasoning_output_tokens: 0}
+  }, extra: {llm_response: {__nemo_relay_integrations_langchain_model_response: {messages: {bad: true}}}}})`);
+  assert.deepEqual(out, {input: 0, output: null, read: null, write: null, reasoning: 0});
+  assert.deepEqual(run(`return stepTokens({extra: {llm_response: {__nemo_relay_integrations_langchain_model_response: {messages: [null, {}]}}}})`),
+    {input: null, output: null, read: null, write: null, reasoning: null});
+});
+
+test("the header and step show explicit token labels and counts independent of filters", () => {
+  const out = run(setup(ROW, RELAY) + `
+    tab = "trajectory"; lens = "tools"; query = "missing"; render();
+    return {html: main.innerHTML, step: step(traj.subagent_trajectories[0].steps[1], traj.subagent_trajectories[0], 1, null, "child-")};
+  `);
+  assert.match(out.html, /<b>4<\/b><span>recorded steps/);
+  assert.match(out.html, /<b>150<\/b><span>input tokens/);
+  assert.match(out.html, /<b>110<\/b><span>cache read/);
+  assert.match(out.html, /<b>22<\/b><span>cache write/);
+  assert.match(out.html, /1 main \+ 3 embedded steps/);
+  assert.match(out.html, /<b>2<\/b><span>tool turns/);
+  assert.match(out.html, /<b>3<\/b><span>tool calls/);
+  for (const label of ["100 input", "20 output", "80 cache read", "17 cache write", "4 reasoning"])
+    assert.ok(out.step.includes(label), label);
+  assert.match(run(`return stat(null, "input tokens")`), /<b>—<\/b>/);
+  assert.match(run(`return stat(0, "cache read")`), /<b>0<\/b>/);
+  assert.match(run(`return stat(20, "output tokens", "", true)`), /<b>≥20<\/b>/);
+});
+
+test("step timestamps display only the date and time through seconds", () => {
+  for (const timestamp of [
+    "2026-10-14T00:05:30.077771362+00:00",
+    "2026-10-14T00:05:30.123Z",
+    "2026-10-14T00:05:30+02:00",
+    "2026-10-14T00:05:30Z",
+  ]) {
+    const s = {step_id: 1, source: "agent", timestamp};
+    const out = run(`const s = ${JSON.stringify(s)};
+      const html = step(s, {steps: [s]}, 0, 0, "");
+      return {html, timestamp: s.timestamp};`);
+    assert.match(out.html, /<span>2026-10-14 00:05:30<\/span>/);
+    assert.equal(out.timestamp, timestamp);
+  }
+});
+
 test("a subagent step key is scoped, so it cannot collide with the parent's", () => {
   const out = run(
     setup() +

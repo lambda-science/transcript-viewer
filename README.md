@@ -49,6 +49,14 @@ folders; **Clear library** removes the index without deleting source files.
 The interface includes search and filters, Markdown rendering, tool-call and
 subagent views, themes, tags, and favourites.
 
+The session summary includes embedded trajectories and distinguishes recorded
+steps, model calls, tool turns, and individual tool calls (including delegation).
+Input and output totals include the cache and reasoning breakdowns shown beside
+them. Missing metrics display as `—`; partial totals display as `≥`. Each model
+step also shows its recorded input, output, cache reads, and cache writes.
+NeMo Relay's empty DeepAgent request wrapper is hidden so the conversation opens
+directly. Real subagent delegations remain visible; Raw retains the original file.
+
 ## Privacy and storage
 
 The server binds `127.0.0.1` by default. Nothing is uploaded automatically and
