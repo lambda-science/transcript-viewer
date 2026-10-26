@@ -337,6 +337,32 @@ test("step usage prefers ATIF metrics and ignores malformed token values", () =>
     {input: null, output: null, read: null, write: null, reasoning: null});
 });
 
+test("Pi usage supplements ATIF metrics without counting request history", () => {
+  const out = run(`
+    const s = {source: "agent", llm_call_count: 1,
+      metrics: {prompt_tokens: 100, completion_tokens: 20, cached_tokens: 80,
+        extra: {completion_tokens_details: {reasoning_tokens: 4}}},
+      extra: {
+        llm_request: {usage: {prompt_tokens_details: {created_cache_tokens: 999999}}},
+        llm_response: {usage: {prompt_tokens_details: {created_cache_tokens: 17}}},
+      },
+    };
+    const summary = runSummary({steps: [s]});
+    s.metrics.extra.cache_creation_input_tokens = 0;
+    s.metrics.extra.reasoning_output_tokens = 0;
+    const explicit = stepTokens(s);
+    delete s.metrics.extra.cache_creation_input_tokens;
+    delete s.metrics.extra.reasoning_output_tokens;
+    s.metrics.extra.completion_tokens_details.reasoning_tokens = -1;
+    s.extra.llm_response.usage.prompt_tokens_details.created_cache_tokens = "17";
+    return {summary, explicit, malformed: stepTokens(s)};
+  `);
+  assert.deepEqual(out.summary.tokens, {input: 100, output: 20, read: 80, write: 17, reasoning: 4});
+  assert.equal(out.summary.modelCalls, 1);
+  assert.deepEqual(out.explicit, {input: 100, output: 20, read: 80, write: 0, reasoning: 0});
+  assert.deepEqual(out.malformed, {input: 100, output: 20, read: 80, write: null, reasoning: null});
+});
+
 test("the header and step show explicit token labels and counts independent of filters", () => {
   const out = run(setup(ROW, RELAY) + `
     tab = "trajectory"; lens = "tools"; query = "missing"; render();
@@ -1752,10 +1778,31 @@ test("normal result content wins over the nested fallback, and missing results a
     resultContent({content: "primary", extra: {tool_result: {data: {content: "fallback"}}}}),
     resultContent({content: "", extra: {tool_result: {data: {content: "fallback"}}}}),
     resultContent({extra: {tool_result: {data: {content: "fallback"}}}}),
+    resultContent({extra: {tool_result: {content: "pi"}}}),
+    resultContent({extra: {tool_result: {data: {content: "legacy"}, content: "pi"}}}),
+    resultContent({content: "", extra: {tool_result: {content: "pi"}}}),
     resultContent({extra: {tool_result: {}}}),
     resultContent(undefined),
   ];`);
-  assert.deepStrictEqual(contents, ["primary", "", "fallback", undefined, undefined]);
+  assert.deepStrictEqual(contents, ["primary", "", "fallback", "pi", "legacy", "", undefined, undefined]);
+});
+
+test("Pi tool outputs are rendered, escaped, and searchable", () => {
+  for (const content of ["Pi answer <script>alert(1)</script>",
+    [{type: "text", text: "Pi answer <script>alert(1)</script>"}]]) {
+    const s = {step_id: 1, source: "agent",
+      tool_calls: [{tool_call_id: "pi-read", function_name: "read", arguments: {path: "/a.txt"}}],
+      observation: {results: [{source_call_id: "pi-read", extra: {tool_result: {content}}}]},
+    };
+    for (const raw of [false, true]) {
+      const out = run(`raw = ${raw}; const s = ${JSON.stringify(s)};
+        return {html: step(s, {steps: [s]}, 0), search: haystack(s)};`);
+      assert.match(out.html, /class="io out"/);
+      assert.match(out.html, /Pi answer/);
+      assert.ok(!out.html.includes("<script>"));
+      assert.match(out.search, /pi answer/);
+    }
+  }
 });
 
 for (const shape of ["string", "multipart", "nested"]) {

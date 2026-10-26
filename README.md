@@ -56,6 +56,8 @@ them. Missing metrics display as `—`; partial totals display as `≥`. Each mo
 step also shows its recorded input, output, cache reads, and cache writes.
 NeMo Relay's empty DeepAgent request wrapper is hidden so the conversation opens
 directly. Real subagent delegations remain visible; Raw retains the original file.
+NeMo Relay ATIF exports from Pi and Deep-Agent both support tool outputs and
+search, including their respective cache-write and reasoning token fields.
 
 ## Privacy and storage
 

@@ -3212,7 +3212,7 @@
   const toolIsRaw = (id) => (id in TOOLRAW ? TOOLRAW[id] : raw);
 
   const resultContent = (r) =>
-    r?.content ?? r?.extra?.tool_result?.data?.content;
+    r?.content ?? r?.extra?.tool_result?.data?.content ?? r?.extra?.tool_result?.content;
 
   function toolBody(id) {
     const held = CALLS[id];
@@ -6441,8 +6441,8 @@
       input: recordedNumber(m.prompt_tokens) ?? sum((u) => u.input_tokens),
       output: recordedNumber(m.completion_tokens) ?? sum((u) => u.output_tokens),
       read: recordedNumber(m.cached_tokens) ?? sum((u) => u.input_token_details?.cache_read),
-      write: recordedNumber(x.cache_creation_input_tokens) ?? sum((u) => u.input_token_details?.cache_creation),
-      reasoning: recordedNumber(x.reasoning_output_tokens) ?? sum((u) => u.output_token_details?.reasoning),
+      write: recordedNumber(x.cache_creation_input_tokens) ?? recordedNumber(s.extra?.llm_response?.usage?.prompt_tokens_details?.created_cache_tokens) ?? sum((u) => u.input_token_details?.cache_creation),
+      reasoning: recordedNumber(x.reasoning_output_tokens) ?? recordedNumber(x.completion_tokens_details?.reasoning_tokens) ?? sum((u) => u.output_token_details?.reasoning),
     };
   }
 
