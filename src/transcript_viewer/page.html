@@ -3214,6 +3214,17 @@
   const resultContent = (r) =>
     r?.content ?? r?.extra?.tool_result?.data?.content ?? r?.extra?.tool_result?.content;
 
+  function toolCalls(s) {
+    const calls = s.tool_calls || [], results = s.observation?.results || [];
+    // Pi Responses can record a model call and a hook copy; the hook owns its result.
+    return calls.filter((c) => results.some((r) => r.source_call_id === c.tool_call_id) ||
+      !calls.some((hook) => hook.extra?.metadata?.harness === "pi" &&
+        typeof c.tool_call_id === "string" &&
+        hook.tool_call_id?.startsWith(c.tool_call_id + "|") &&
+        hook.function_name === c.function_name &&
+        results.some((r) => r.source_call_id === hook.tool_call_id)));
+  }
+
   function toolBody(id) {
     const held = CALLS[id];
     if (!held) return "";
@@ -4921,7 +4932,7 @@
         : (s.message || []).map((p) => p.text || "").join(" "),
       s.reasoning_content || "",
     ];
-    for (const c of s.tool_calls || []) {
+    for (const c of toolCalls(s)) {
       parts.push(c.function_name);
       parts.push(JSON.stringify(c.arguments || {}));
     }
@@ -5001,7 +5012,7 @@
         tools: [
           ...new Set(
             (sub.steps || []).flatMap((s) =>
-              (s.tool_calls || []).map((c) => c.function_name),
+              toolCalls(s).map((c) => c.function_name),
             ),
           ),
         ],
@@ -5016,7 +5027,7 @@
 
     const walk = (parent, depth, under, rootIndex, branch) => {
       (parent.steps || []).forEach((step, i) => {
-        for (const call of step.tool_calls || []) {
+        for (const call of toolCalls(step)) {
           const r = (step.observation?.results || []).find(
             (x) => x.source_call_id === call.tool_call_id,
           );
@@ -6376,7 +6387,7 @@
   function branchIndex(t) {
     const out = [];
     t.steps.forEach((s, i) => {
-      for (const c of s.tool_calls || []) {
+      for (const c of toolCalls(s)) {
         const r = (s.observation?.results || []).find(
           (x) => x.source_call_id === c.tool_call_id,
         );
@@ -6442,7 +6453,7 @@
       output: recordedNumber(m.completion_tokens) ?? sum((u) => u.output_tokens),
       read: recordedNumber(m.cached_tokens) ?? sum((u) => u.input_token_details?.cache_read),
       write: recordedNumber(x.cache_creation_input_tokens) ?? recordedNumber(s.extra?.llm_response?.usage?.prompt_tokens_details?.created_cache_tokens) ?? sum((u) => u.input_token_details?.cache_creation),
-      reasoning: recordedNumber(x.reasoning_output_tokens) ?? recordedNumber(x.completion_tokens_details?.reasoning_tokens) ?? sum((u) => u.output_token_details?.reasoning),
+      reasoning: recordedNumber(x.reasoning_output_tokens) ?? recordedNumber(x.completion_tokens_details?.reasoning_tokens) ?? recordedNumber(x.output_tokens_details?.reasoning_tokens) ?? sum((u) => u.output_token_details?.reasoning),
     };
   }
 
@@ -6484,7 +6495,7 @@
       modelCalls: calls.some((v) => v !== null) ? calls.reduce((n, v) => n + (v ?? 0), 0) : null,
       partialCalls: calls.some((v) => v === null),
       toolTurns: steps.filter((s) => s.tool_calls?.length).length,
-      toolCalls: steps.reduce((n, s) => n + (s.tool_calls || []).length, 0),
+      toolCalls: steps.reduce((n, s) => n + toolCalls(s).length, 0),
       duration: duration(spanOf(steps)), tokens, partial,
     };
   }
@@ -6806,11 +6817,11 @@
 
   function earlierConversation(s, ctx) {
     if (ctx.steps?.find((s) => s.source === "user") !== s) return "";
-    const recorded = s.extra?.llm_request?.messages;
+    const recorded = s.extra?.llm_request?.messages ?? s.extra?.llm_request?.input;
     if (!Array.isArray(recorded)) return "";
     const messages = recorded.map((m) => m?.data ? {...m, ...m.data} : m || {});
     const role = (m) =>
-      ({human: "user", ai: "agent", assistant: "agent"})[m.role || m.type] ||
+      ({human: "user", ai: "agent", assistant: "agent", function_call: "agent", function_call_output: "tool"})[m.role || m.type] ||
       m.role || m.type || "system";
     const words = (v) => typeof v === "string" ? v :
       Array.isArray(v) ? v.map((p) => typeof p === "string" ? p : p?.text || "").join("") : "";
@@ -6823,7 +6834,8 @@
       <span class="desc">${many(at, "message")} before this run</span>
       </summary><div class="inner">${messages.slice(0, at).map((m) => {
         const r = role(m);
-        const parts = Array.isArray(m.content) ? [...m.content] : [m.content];
+        const value = m.content ?? m.output ?? (m.type === "function_call" ? [m] : []);
+        const parts = Array.isArray(value) ? [...value] : [value];
         if (Array.isArray(m.tool_calls) && !parts.some((p) => p?.type === "function_call"))
           parts.push(...m.tool_calls);
         const content = parts.map((p) => {
@@ -6867,7 +6879,7 @@
     if (s.reasoning_content)
       h += `<div class="think">${esc(s.reasoning_content)}</div>`;
     if (s.message) h += body(s.message);
-    for (const c of s.tool_calls || []) {
+    for (const c of toolCalls(s)) {
       const r = (s.observation?.results || []).find(
         (x) => x.source_call_id === c.tool_call_id,
       );

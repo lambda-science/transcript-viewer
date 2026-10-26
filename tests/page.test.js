@@ -363,6 +363,16 @@ test("Pi usage supplements ATIF metrics without counting request history", () =>
   assert.deepEqual(out.malformed, {input: 100, output: 20, read: 80, write: null, reasoning: null});
 });
 
+test("Pi Responses usage reads reasoning tokens and preserves explicit zero", () => {
+  const out = run(`
+    const s = {metrics: {extra: {output_tokens_details: {reasoning_tokens: 15}}}};
+    const responses = stepTokens(s).reasoning;
+    s.metrics.extra.reasoning_output_tokens = 0;
+    return {responses, explicit: stepTokens(s).reasoning};
+  `);
+  assert.deepEqual(out, {responses: 15, explicit: 0});
+});
+
 test("the header and step show explicit token labels and counts independent of filters", () => {
   const out = run(setup(ROW, RELAY) + `
     tab = "trajectory"; lens = "tools"; query = "missing"; render();
@@ -570,6 +580,29 @@ test("a request containing only the current message adds no earlier conversation
     return step(s, {steps: [s]}, 0, 0, "");
   `);
   assert.doesNotMatch(html, /Earlier conversation/);
+});
+
+test("Responses history includes function calls and outputs before the last matching user turn", () => {
+  const first = {step_id: 1, source: "user", message: "same request",
+    extra: {llm_request: {input: [
+      {role: "system", content: "Internal instructions"},
+      {role: "user", content: [{type: "input_text", text: "same request"}]},
+      {type: "function_call", call_id: "prior", name: "read", arguments: '{"path":"SKILL.md"}'},
+      {type: "function_call_output", call_id: "prior", output: "Earlier result <script>unsafe</script>"},
+      {type: "reasoning", encrypted_content: "opaque-reasoning"},
+      {type: "message", role: "assistant", content: [{type: "output_text", text: "Earlier answer"}]},
+      {role: "user", content: [{type: "input_text", text: "same request"}]},
+      {type: "function_call_output", call_id: "later", output: "later output"},
+    ]}},
+  };
+  const out = run(`const s = ${JSON.stringify(first)};
+    return step(s, {steps: [s]}, 0, 0, "");`);
+  assert.match(out, /Earlier conversation/);
+  assert.match(out, /SKILL.md/);
+  assert.match(out, /Earlier result &lt;script&gt;/);
+  assert.match(out, /Earlier answer/);
+  assert.doesNotMatch(out, /<script>|opaque-reasoning|later output/);
+  assert.equal((out.match(/same request/g) || []).length, 2);
 });
 
 test("render finds its session by key, not by list position", () => {
@@ -1803,6 +1836,41 @@ test("Pi tool outputs are rendered, escaped, and searchable", () => {
       assert.match(out.search, /pi answer/);
     }
   }
+});
+
+test("Pi Responses duplicate calls display once with their hook results", () => {
+  const out = run(`
+    const s = {step_id: 1, source: "agent", tool_calls: [
+      {tool_call_id: "call-a", function_name: "read", arguments: {path: "a"}},
+      {tool_call_id: "call-b", function_name: "read", arguments: {path: "b"}},
+      {tool_call_id: "call-a|fc-a", function_name: "read", arguments: {path: "/workspace/a"},
+        extra: {metadata: {harness: "pi"}}},
+      {tool_call_id: "call-b|fc-b", function_name: "read", arguments: {path: "b"},
+        extra: {metadata: {harness: "pi"}}},
+    ], observation: {results: [
+      {source_call_id: "call-b|fc-b", extra: {tool_result: {content: "Second result"}}},
+      {source_call_id: "call-a|fc-a", extra: {tool_result: {content: "First result"}}},
+    ]}};
+    const ctx = {steps: [s]};
+    const html = step(s, ctx, 0, 0, "");
+    const summary = runSummary(ctx);
+    const originalCount = s.tool_calls.length;
+    delete s.tool_calls[2].extra;
+    const unmarked = toolCalls(s).length;
+    s.tool_calls[3].function_name = "different";
+    const different = toolCalls(s).length;
+    s.tool_calls[3].function_name = "read";
+    s.observation.results.push({source_call_id: "call-b", content: "Independent result"});
+    return {html, summary, originalCount, unmarked, different, independent: toolCalls(s).length};
+  `);
+  assert.equal((out.html.match(/class="tname"/g) || []).length, 2);
+  assert.match(out.html, /First result/);
+  assert.match(out.html, /Second result/);
+  assert.equal(out.summary.toolCalls, 2);
+  assert.equal(out.originalCount, 4);
+  assert.equal(out.unmarked, 3);
+  assert.equal(out.different, 4);
+  assert.equal(out.independent, 4);
 });
 
 for (const shape of ["string", "multipart", "nested"]) {
